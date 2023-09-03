@@ -1,0 +1,29 @@
+name: 'Setup SQL Server environment'
+description: 'Setup an SQL Server environment in your GitHub runner.'
+author: 'tediousjs'
+inputs:
+  skip-os-check:
+    description: 'Skip OS checks that will stop installation attempts preemptively.'
+    default: 'false'
+  sqlserver-version:
+    description: 'Version to use. Examples: 2008, 2012, 2014, etc. "latest" can also be used.'
+    default: 'latest'
+  sa-password:
+    description: 'The SA user password to use.'
+    default: 'yourStrong(!)Password'
+  db-collation:
+    description: 'The database collation to use.'
+    default: 'SQL_Latin1_General_CP1_CI_AS'
+  install-arguments:
+    description: 'Any custom install arguments you wish to use. These must be in the format of "/ARG=VAL".'
+  wait-for-ready:
+    description: 'Wait for the database to respond successfully to queries before completing the action. A maximum of 10 attempts is made.'
+    default: 'true'
+outputs:
+  sa-password:
+    description: 'The SA password, this will be the same as the input, but can be useful when relying on the default value.'
+  instance-name:
+    description: 'The instance name for the SQL Server.'
+runs:
+  using: 'node16'
+  main: 'lib/main/index.js'
