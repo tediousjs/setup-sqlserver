@@ -234,6 +234,23 @@ describe('utils', () => {
                 skipOsCheck: false,
             });
         });
+        it('constructs input object with default version', () => {
+            coreStub.getInput.withArgs('sqlserver-version').returns('');
+            coreStub.getInput.withArgs('sa-password').returns('secret password');
+            coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
+            coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
+            coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
+            coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
+            const res = utils.gatherInputs();
+            expect(res).to.deep.equal({
+                version: '2022',
+                password: 'secret password',
+                collation: 'SQL_Latin1_General_CP1_CI_AS',
+                installArgs: [],
+                wait: true,
+                skipOsCheck: false,
+            });
+        });
     });
     describe('.downloadTool()', () => {
         let downloadStub: SinonStubbedMember<typeof tc.downloadTool>;

@@ -56,7 +56,7 @@ export interface Inputs {
  * @returns {Inputs}
  */
 export function gatherInputs(): Inputs {
-    const version = core.getInput('sqlserver-version').replace(/sql-/i, '');
+    const version = core.getInput('sqlserver-version').replace(/sql-/i, '') || 'latest';
     return {
         version: version.toLowerCase() === 'latest' ? '2022' : version,
         password: core.getInput('sa-password'),
