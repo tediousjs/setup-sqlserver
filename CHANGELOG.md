@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.0.1...v1.1.0) (2023-09-04)
+
+
+### Features
+
+* add SQL Native Client 11.0 installer ([dd970c4](https://github.com/tediousjs/setup-sqlserver/commit/dd970c461fc23fa874b4c5d3291de36d8d045ac4))
+
 ## [1.0.1](https://github.com/tediousjs/setup-sqlserver/compare/v1.0.0...v1.0.1) (2023-09-04)
 
 
