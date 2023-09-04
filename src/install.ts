@@ -32,44 +32,44 @@ function findOrDownloadTool(config: VersionConfig): Promise<string> {
 }
 
 export default async function install() {
-    try {
-        const { version, password, collation, installArgs, wait, skipOsCheck } = gatherInputs();
-        // we only support windows for now. But allow crazy people to skip this check if they like...
-        if (!skipOsCheck && os.platform() !== 'win32') {
-            throw new Error(`setup-sqlserver only supports Windows runners, got: ${os.platform()}`);
-        }
-        const osVersion = await getOsVersion();
-        if (!VERSIONS.has(version)) {
-            throw new Error(`Unsupported SQL Version, supported versions are ${Array.from(VERSIONS.keys()).join(', ')}, got: ${version}`);
-        }
-        const config = VERSIONS.get(version)!;
-        // try to fail fast if the OS is not supported
-        if (config.osSupport) {
-            const { min, max } = config.osSupport;
-            // allow checks to be skipped
-            if (skipOsCheck) {
-                core.info('Skipping OS checks');
-            } else if (!osVersion) {
-                core.notice('Unable to determine OS version, continuing tentatively');
-            } else if ((min && min > osVersion) || (max && max < osVersion)) {
-                // construct a helpful error
-                let message = 'Please use ';
-                if (min) {
-                    message += `windows-${min}`;
-                }
-                if (max) {
-                    if (min) {
-                        message += ' to ';
-                    }
-                    message += `windows-${max}`;
-                }
-                message += '.';
-                throw new Error(`Runner version windows-${osVersion} is not supported for SQL Server ${version}. ${message}`);
+    const { version, password, collation, installArgs, wait, skipOsCheck } = gatherInputs();
+    // we only support windows for now. But allow crazy people to skip this check if they like...
+    if (!skipOsCheck && os.platform() !== 'win32') {
+        throw new Error(`setup-sqlserver only supports Windows runners, got: ${os.platform()}`);
+    }
+    const osVersion = await getOsVersion();
+    if (!VERSIONS.has(version)) {
+        throw new Error(`Unsupported SQL Version, supported versions are ${Array.from(VERSIONS.keys()).join(', ')}, got: ${version}`);
+    }
+    const config = VERSIONS.get(version)!;
+    // try to fail fast if the OS is not supported
+    if (config.osSupport) {
+        const { min, max } = config.osSupport;
+        // allow checks to be skipped
+        if (skipOsCheck) {
+            core.info('Skipping OS checks');
+        } else if (!osVersion) {
+            core.notice('Unable to determine OS version, continuing tentatively');
+        } else if ((min && min > osVersion) || (max && max < osVersion)) {
+            // construct a helpful error
+            let message = 'Please use ';
+            if (min) {
+                message += `windows-${min}`;
             }
+            if (max) {
+                if (min) {
+                    message += ' to ';
+                }
+                message += `windows-${max}`;
+            }
+            message += '.';
+            throw new Error(`Runner version windows-${osVersion} is not supported for SQL Server ${version}. ${message}`);
         }
-        // Initial checks complete - fetch the installer
-        const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));
-        const instanceName = 'MSSQLSERVER';
+    }
+    // Initial checks complete - fetch the installer
+    const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));
+    const instanceName = 'MSSQLSERVER';
+    try {
         // @todo - make sure that the arguments are unique / don't conflict
         await core.group('Installing SQL Server', () => exec.exec(`"${toolPath}"`, [
             '/q',
