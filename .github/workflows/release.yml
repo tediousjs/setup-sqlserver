@@ -145,6 +145,7 @@ jobs:
         uses: ./
         with:
           sqlserver-version: ${{ matrix.sqlserver }}
+          native-client-version: 11
   release:
     name: Release
     concurrency: release

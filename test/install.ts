@@ -4,6 +4,7 @@ import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
 import * as versions from '../src/versions';
+import * as nativeClient from '../src/install-native-client';
 import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
 import * as utils from '../src/utils';
 import install from '../src/install';
@@ -20,7 +21,9 @@ describe('install', () => {
     let utilsStub: SinonStubbedInstance<typeof utils>;
     let tcStub: SinonStubbedInstance<typeof tc>;
     let execStub: SinonStubbedInstance<typeof exec>;
+    let stubNc: SinonStubbedInstance<typeof nativeClient>;
     beforeEach('stub deps', () => {
+        stubNc = stub(nativeClient);
         versionStub = stub(versions.VERSIONS);
         versionStub.keys.returns(['box', 'exe', 'maxOs', 'minOs', 'minMaxOs'][Symbol.iterator]());
         versionStub.has.callsFake((name) => {
@@ -65,6 +68,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         utilsStub.getOsVersion.resolves(2022);
         utilsStub.gatherSummaryFiles.resolves([]);
@@ -105,6 +109,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         try {
             await install();
@@ -126,6 +131,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -143,6 +149,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         try {
             await install();
@@ -161,6 +168,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         try {
             await install();
@@ -179,6 +187,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         try {
             await install();
@@ -197,6 +206,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -210,6 +220,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -222,6 +233,7 @@ describe('install', () => {
             installArgs: [],
             wait: true,
             skipOsCheck: true,
+            nativeClientVersion: '',
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -256,6 +268,7 @@ describe('install', () => {
             installArgs: [],
             wait: false,
             skipOsCheck: false,
+            nativeClientVersion: '',
         });
         const stubReadfile = stub(fs, 'readFile');
         stubReadfile.resolves(Buffer.from('test data'));
@@ -280,5 +293,18 @@ describe('install', () => {
             return;
         }
         expect.fail('expected to throw');
+    });
+    it('installs native client if needed', async () => {
+        utilsStub.gatherInputs.returns({
+            version: 'box',
+            password: 'secret password',
+            collation: 'SQL_Latin1_General_CP1_CI_AS',
+            installArgs: [],
+            wait: false,
+            skipOsCheck: false,
+            nativeClientVersion: '11',
+        });
+        await install();
+        expect(stubNc.default).to.have.been.calledOnceWith(11);
     });
 });

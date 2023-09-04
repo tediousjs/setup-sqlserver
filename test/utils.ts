@@ -187,6 +187,7 @@ describe('utils', () => {
             coreStub.getInput.withArgs('sqlserver-version').returns('sql-2022');
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
+            coreStub.getInput.withArgs('native-client-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -198,12 +199,14 @@ describe('utils', () => {
                 installArgs: [],
                 wait: true,
                 skipOsCheck: false,
+                nativeClientVersion: '',
             });
         });
         it('constructs input object with no sql- prefix', () => {
             coreStub.getInput.withArgs('sqlserver-version').returns('2022');
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
+            coreStub.getInput.withArgs('native-client-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -215,12 +218,14 @@ describe('utils', () => {
                 installArgs: [],
                 wait: true,
                 skipOsCheck: false,
+                nativeClientVersion: '',
             });
         });
         it('constructs input object with "latest" version', () => {
             coreStub.getInput.withArgs('sqlserver-version').returns('latest');
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
+            coreStub.getInput.withArgs('native-client-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -232,12 +237,14 @@ describe('utils', () => {
                 installArgs: [],
                 wait: true,
                 skipOsCheck: false,
+                nativeClientVersion: '',
             });
         });
         it('constructs input object with default version', () => {
             coreStub.getInput.withArgs('sqlserver-version').returns('');
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
+            coreStub.getInput.withArgs('native-client-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -249,6 +256,7 @@ describe('utils', () => {
                 installArgs: [],
                 wait: true,
                 skipOsCheck: false,
+                nativeClientVersion: '',
             });
         });
     });

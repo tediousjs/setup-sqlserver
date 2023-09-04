@@ -13,6 +13,7 @@ import {
     getOsVersion,
     waitForDatabase,
 } from './utils';
+import installNativeClient from './install-native-client';
 
 /**
  * Attempt to load the installer from the tool-cache, otherwise, fetch it.
@@ -32,7 +33,15 @@ function findOrDownloadTool(config: VersionConfig): Promise<string> {
 }
 
 export default async function install() {
-    const { version, password, collation, installArgs, wait, skipOsCheck } = gatherInputs();
+    const {
+        version,
+        password,
+        collation,
+        installArgs,
+        wait,
+        skipOsCheck,
+        nativeClientVersion,
+    } = gatherInputs();
     // we only support windows for now. But allow crazy people to skip this check if they like...
     if (!skipOsCheck && os.platform() !== 'win32') {
         throw new Error(`setup-sqlserver only supports Windows runners, got: ${os.platform()}`);
@@ -65,6 +74,9 @@ export default async function install() {
             message += '.';
             throw new Error(`Runner version windows-${osVersion} is not supported for SQL Server ${version}. ${message}`);
         }
+    }
+    if (nativeClientVersion) {
+        await core.group('Installing SQL Native Client', () => installNativeClient(parseInt(nativeClientVersion, 10)));
     }
     // Initial checks complete - fetch the installer
     const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));
