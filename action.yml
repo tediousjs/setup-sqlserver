@@ -8,6 +8,8 @@ inputs:
   sqlserver-version:
     description: 'Version to use. Examples: 2008, 2012, 2014, etc. "latest" can also be used.'
     default: 'latest'
+  native-client-version:
+    description: 'Version of native client to installer. Only 11 is supported.'
   sa-password:
     description: 'The SA user password to use.'
     default: 'yourStrong(!)Password'

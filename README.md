@@ -17,6 +17,9 @@ See [action.yml](./action.yml):
     # Default: latest
     sqlserver-version: ''
 
+    # Version of native client to installer. Only 11 is supported.
+    native-client-version: ''
+
     # The SA user password to use.
     # Default: yourStrong(!)Password
     sa-password: ''

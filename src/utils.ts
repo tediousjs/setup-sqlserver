@@ -48,6 +48,7 @@ export interface Inputs {
     installArgs: string[];
     wait: boolean;
     skipOsCheck: boolean;
+    nativeClientVersion: string;
 }
 
 /**
@@ -64,6 +65,7 @@ export function gatherInputs(): Inputs {
         installArgs: core.getMultilineInput('install-arguments'),
         wait: core.getBooleanInput('wait-for-ready'),
         skipOsCheck: core.getBooleanInput('skip-os-check'),
+        nativeClientVersion: core.getInput('native-client-version'),
     };
 }
 
