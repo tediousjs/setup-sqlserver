@@ -10,7 +10,7 @@
     "lint": "eslint --config ./.eslintrc.json ./src ./misc ./test",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
-    "test": "mocha -r ts-node/register './test/**.ts'",
+    "test": "mocha -r ts-node/register './test/**/**.ts'",
     "test:coverage": "nyc --all npm run test --silent"
   },
   "files": [

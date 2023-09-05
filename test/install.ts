@@ -315,6 +315,6 @@ describe('install', () => {
             nativeClientVersion: '11',
         });
         await install();
-        expect(stubNc.default).to.have.been.calledOnceWith(11);
+        expect(stubNc.default).to.have.been.calledOnceWith('11');
     });
 });

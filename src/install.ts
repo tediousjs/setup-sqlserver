@@ -77,7 +77,7 @@ export default async function install() {
         }
     }
     if (nativeClientVersion) {
-        await core.group('Installing SQL Native Client', () => installNativeClient(parseInt(nativeClientVersion, 10)));
+        await core.group('Installing SQL Native Client', () => installNativeClient(nativeClientVersion));
     }
     // Initial checks complete - fetch the installer
     const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));

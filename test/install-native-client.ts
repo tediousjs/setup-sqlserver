@@ -2,7 +2,7 @@ import { match, restore, SinonStubbedInstance, stub } from 'sinon';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
-import * as utils from '../src/utils';
+import * as io from '@actions/io';
 import installNativeClient from '../src/install-native-client';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
@@ -12,7 +12,7 @@ describe('install-native-client', () => {
     // let coreStub: SinonStubbedInstance<typeof core>;
     let tcStub: SinonStubbedInstance<typeof tc>;
     let execStub: SinonStubbedInstance<typeof exec>;
-    let utilsStub: SinonStubbedInstance<typeof utils>;
+    let ioStub: SinonStubbedInstance<typeof io>;
     let arch: PropertyDescriptor;
     beforeEach('stub deps', () => {
         stub(core);
@@ -21,8 +21,8 @@ describe('install-native-client', () => {
         tcStub.find.returns('');
         execStub = stub(exec);
         execStub.exec.resolves();
-        utilsStub = stub(utils);
-        utilsStub.downloadTool.resolves('c:/tmp/downloads');
+        ioStub = stub(io);
+        ioStub.mv.resolves();
     });
     afterEach('restore stubs', () => {
         Object.defineProperty(process, 'arch', arch);
@@ -31,17 +31,17 @@ describe('install-native-client', () => {
     describe('.installNativeClient()', () => {
         it('throws for bad version', async () => {
             try {
-                await installNativeClient(10);
+                await installNativeClient('10');
             } catch (e) {
-                expect(e).to.have.property('message', 'Unsupported Native Client version, only 11 is valid.');
+                expect(e).to.have.property('message', 'Invalid native client version supplied 10. Must be one of 11.');
                 return;
             }
             expect.fail('expected to throw');
         });
         it('installs from cache', async () => {
             tcStub.find.returns('C:/tmp/');
-            await installNativeClient(11);
-            expect(utilsStub.downloadTool).to.have.callCount(0);
+            await installNativeClient('11');
+            expect(tcStub.downloadTool).to.have.callCount(0);
             expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
                 windowsVerbatimArguments: true,
             });
@@ -52,8 +52,9 @@ describe('install-native-client', () => {
                 value: 'x64',
             });
             tcStub.cacheFile.resolves('C:/tmp/cache/');
-            await installNativeClient(11);
-            expect(utilsStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x64/sqlncli.msi');
+            tcStub.downloadTool.resolves('C:/tmp/downloads');
+            await installNativeClient('11');
+            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x64/sqlncli.msi');
             expect(tcStub.cacheFile).to.have.callCount(1);
             expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
                 windowsVerbatimArguments: true,
@@ -65,8 +66,9 @@ describe('install-native-client', () => {
                 value: 'x32',
             });
             tcStub.cacheFile.resolves('C:/tmp/cache/');
-            await installNativeClient(11);
-            expect(utilsStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x86/sqlncli.msi');
+            tcStub.downloadTool.resolves('C:/tmp/downloads');
+            await installNativeClient('11');
+            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x86/sqlncli.msi');
             expect(tcStub.cacheFile).to.have.callCount(1);
             expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
                 windowsVerbatimArguments: true,
