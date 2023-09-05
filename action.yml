@@ -10,6 +10,8 @@ inputs:
     default: 'latest'
   native-client-version:
     description: 'Version of native client to install. Only 11 is supported.'
+  odbc-version:
+    description: 'Version of ODBC to install. Supported versions: 17, 18.'
   sa-password:
     description: 'The SA user password to use.'
     default: 'yourStrong(!)Password'

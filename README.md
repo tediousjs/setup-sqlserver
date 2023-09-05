@@ -20,6 +20,9 @@ See [action.yml](./action.yml):
     # Version of native client to install. Only 11 is supported.
     native-client-version: ''
 
+    # Version of ODBC to install. Supported versions: 17, 18.
+    odbc-version: ''
+
     # The SA user password to use.
     # Default: yourStrong(!)Password
     sa-password: ''

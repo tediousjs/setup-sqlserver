@@ -14,6 +14,7 @@ import {
     waitForDatabase,
 } from './utils';
 import installNativeClient from './install-native-client';
+import installOdbc from './install-odbc';
 
 /**
  * Attempt to load the installer from the tool-cache, otherwise, fetch it.
@@ -42,6 +43,7 @@ export default async function install() {
         wait,
         skipOsCheck,
         nativeClientVersion,
+        odbcVersion,
     } = gatherInputs();
     // we only support windows for now. But allow crazy people to skip this check if they like...
     if (!skipOsCheck && os.platform() !== 'win32') {
@@ -78,6 +80,9 @@ export default async function install() {
     }
     if (nativeClientVersion) {
         await core.group('Installing SQL Native Client', () => installNativeClient(nativeClientVersion));
+    }
+    if (odbcVersion) {
+        await core.group('Installing ODBC', () => installOdbc(odbcVersion));
     }
     // Initial checks complete - fetch the installer
     const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));
