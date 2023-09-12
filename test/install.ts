@@ -278,7 +278,7 @@ describe('install', () => {
         expect(coreStub.info).calledWith('test data');
         expect(coreStub.endGroup).has.callCount(1);
     });
-    it('fetches summary files even on errors', async () => {
+    it('fetches summary files with details on errors', async () => {
         const stubReadfile = stub(fs, 'readFile');
         stubReadfile.resolves(Buffer.from('test data'));
         utilsStub.gatherSummaryFiles.resolves(['C:/tmp/summary.txt']);
@@ -287,12 +287,22 @@ describe('install', () => {
             await install();
         } catch (e) {
             expect(e).to.have.property('message', 'synthetic error');
+            expect(utilsStub.gatherSummaryFiles).to.have.been.calledOnceWith(true);
             expect(coreStub.startGroup).calledOnceWith('summary.txt');
             expect(coreStub.info).calledOnceWith('test data');
             expect(coreStub.endGroup).has.callCount(1);
             return;
         }
         expect.fail('expected to throw');
+    });
+    it('fetches summary detail files during debug', async () => {
+        const stubReadfile = stub(fs, 'readFile');
+        stubReadfile.resolves(Buffer.from('test data'));
+        utilsStub.gatherSummaryFiles.resolves(['C:/tmp/summary.txt']);
+        coreStub.isDebug.returns(true);
+        await install();
+        expect(utilsStub.gatherSummaryFiles).to.have.been.calledOnceWith(true);
+        expect(coreStub.info).calledWith('test data');
     });
     it('installs native client if needed', async () => {
         utilsStub.gatherInputs.returns({
