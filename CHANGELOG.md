@@ -1,5 +1,12 @@
 # Changelog
 
+# [1.2.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.1.0...v1.2.0) (2023-09-12)
+
+
+### Features
+
+* output details files if install fails ([f27f339](https://github.com/tediousjs/setup-sqlserver/commit/f27f33949f28ef7aae4663f101c27c8d2416ca90))
+
 # [1.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.0.1...v1.1.0) (2023-09-04)
 
 
