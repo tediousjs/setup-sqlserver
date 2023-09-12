@@ -33,6 +33,7 @@ function findOrDownloadTool(config: VersionConfig): Promise<string> {
 }
 
 export default async function install() {
+    let threw = false;
     const {
         version,
         password,
@@ -131,10 +132,13 @@ export default async function install() {
             core.endGroup();
         }
         core.info(`SQL Server ${version} installed`);
+    } catch (e) {
+        threw = true;
+        throw e;
     } finally {
         // For information purposes, output the summary.txt file
         // if there was an error, then also fetch the detail.txt file and output that too
-        const files = await gatherSummaryFiles(core.isDebug());
+        const files = await gatherSummaryFiles(threw || core.isDebug());
         // read the files in parallel
         const contents: [string, Buffer][] = await Promise.all(files.map((path) => readFile(path).then((content): [string, Buffer] => {
             return [path, content];
