@@ -188,6 +188,7 @@ describe('utils', () => {
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
             coreStub.getInput.withArgs('native-client-version').returns('');
+            coreStub.getInput.withArgs('odbc-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -200,6 +201,7 @@ describe('utils', () => {
                 wait: true,
                 skipOsCheck: false,
                 nativeClientVersion: '',
+                odbcVersion: '',
             });
         });
         it('constructs input object with no sql- prefix', () => {
@@ -207,6 +209,7 @@ describe('utils', () => {
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
             coreStub.getInput.withArgs('native-client-version').returns('');
+            coreStub.getInput.withArgs('odbc-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -219,6 +222,7 @@ describe('utils', () => {
                 wait: true,
                 skipOsCheck: false,
                 nativeClientVersion: '',
+                odbcVersion: '',
             });
         });
         it('constructs input object with "latest" version', () => {
@@ -226,6 +230,7 @@ describe('utils', () => {
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
             coreStub.getInput.withArgs('native-client-version').returns('');
+            coreStub.getInput.withArgs('odbc-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -238,6 +243,7 @@ describe('utils', () => {
                 wait: true,
                 skipOsCheck: false,
                 nativeClientVersion: '',
+                odbcVersion: '',
             });
         });
         it('constructs input object with default version', () => {
@@ -245,6 +251,7 @@ describe('utils', () => {
             coreStub.getInput.withArgs('sa-password').returns('secret password');
             coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
             coreStub.getInput.withArgs('native-client-version').returns('');
+            coreStub.getInput.withArgs('odbc-version').returns('');
             coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
             coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
             coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
@@ -257,6 +264,7 @@ describe('utils', () => {
                 wait: true,
                 skipOsCheck: false,
                 nativeClientVersion: '',
+                odbcVersion: '',
             });
         });
     });

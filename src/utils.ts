@@ -49,6 +49,7 @@ export interface Inputs {
     wait: boolean;
     skipOsCheck: boolean;
     nativeClientVersion: string;
+    odbcVersion: string;
 }
 
 /**
@@ -66,6 +67,7 @@ export function gatherInputs(): Inputs {
         wait: core.getBooleanInput('wait-for-ready'),
         skipOsCheck: core.getBooleanInput('skip-os-check'),
         nativeClientVersion: core.getInput('native-client-version'),
+        odbcVersion: core.getInput('odbc-version'),
     };
 }
 

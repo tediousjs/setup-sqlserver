@@ -95,7 +95,7 @@ function updateUsage(
         // Constrain the width of the description
         const width = 80;
         let description = (input.description as string)
-            .trimRight()
+            .trimEnd()
             .replace(/\r\n/g, '\n') // Convert CR to LF
             .replace(/ +/g, ' ') //    Squash consecutive spaces
             .replace(/ \n/g, '\n'); //  Squash space followed by newline
@@ -123,7 +123,7 @@ function updateUsage(
             }
 
             // Append segment
-            newReadme.push(`    # ${segment}`.trimRight());
+            newReadme.push(`    # ${segment}`.trimEnd());
 
             // Remaining
             description = description.substr(segment.length);
@@ -131,7 +131,7 @@ function updateUsage(
 
         if (input.default !== undefined) {
             // Append blank line if description had paragraphs
-            if ((input.description as string).trimRight().match(/\n[ ]*\r?\n/)) {
+            if ((input.description as string).trimEnd().match(/\n[ ]*\r?\n/)) {
                 newReadme.push(`    #`);
             }
 
@@ -140,7 +140,16 @@ function updateUsage(
         }
 
         // Input name
-        newReadme.push(`    ${key}: ''`);
+        let inputValue: string;
+        switch (input.default) {
+            case 'true':
+            case 'false':
+                inputValue = input.default;
+                break;
+            default:
+                inputValue = `'${input.default ?? ''}'`;
+        }
+        newReadme.push(`    ${key}: ${inputValue}`);
 
         firstInput = false;
     }

@@ -1,14 +1,14 @@
-import { match, restore, SinonStubbedInstance, stub } from 'sinon';
+import { restore, SinonStubbedInstance, stub } from 'sinon';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
 import * as io from '@actions/io';
-import installNativeClient from '../src/install-native-client';
+import installOdbc from '../src/install-odbc';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 use(sinonChai);
 
-describe('install-native-client', () => {
+describe('install-odbc', () => {
     // let coreStub: SinonStubbedInstance<typeof core>;
     let tcStub: SinonStubbedInstance<typeof tc>;
     let execStub: SinonStubbedInstance<typeof exec>;
@@ -28,24 +28,28 @@ describe('install-native-client', () => {
         Object.defineProperty(process, 'arch', arch);
         restore();
     });
-    describe('.installNativeClient()', () => {
+    describe('.installOdbc()', () => {
         it('throws for bad version', async () => {
             try {
-                await installNativeClient('10');
+                await installOdbc('10');
             } catch (e) {
-                expect(e).to.have.property('message', 'Invalid native client version supplied 10. Must be one of 11.');
+                expect(e).to.have.property('message', 'Invalid ODBC version supplied 10. Must be one of 18, 17.');
                 return;
             }
             expect.fail('expected to throw');
         });
         it('installs from cache', async () => {
             tcStub.find.returns('C:/tmp/');
-            await installNativeClient('11');
+            await installOdbc('18');
             expect(tcStub.downloadTool).to.have.callCount(0);
-            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
+            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', [
+                '/passive',
+                '/i',
+                'C:/tmp/msodbcsql.msi',
+                'IACCEPTMSODBCSQLLICENSETERMS=YES',
+            ], {
                 windowsVerbatimArguments: true,
             });
-            expect(execStub.exec.firstCall.args[1]).to.contain('C:/tmp/sqlncli.msi');
         });
         it('installs from web (x64)', async () => {
             Object.defineProperty(process, 'arch', {
@@ -53,13 +57,17 @@ describe('install-native-client', () => {
             });
             tcStub.cacheFile.resolves('C:/tmp/cache/');
             tcStub.downloadTool.resolves('C:/tmp/downloads');
-            await installNativeClient('11');
-            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x64/sqlncli.msi');
+            await installOdbc('17');
+            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://go.microsoft.com/fwlink/?linkid=2239168');
             expect(tcStub.cacheFile).to.have.callCount(1);
-            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
+            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', [
+                '/passive',
+                '/i',
+                'C:/tmp/cache/msodbcsql.msi',
+                'IACCEPTMSODBCSQLLICENSETERMS=YES',
+            ], {
                 windowsVerbatimArguments: true,
             });
-            expect(execStub.exec.firstCall.args[1]).to.contain('C:/tmp/cache/sqlncli.msi');
         });
         it('installs from web (x32)', async () => {
             Object.defineProperty(process, 'arch', {
@@ -67,14 +75,17 @@ describe('install-native-client', () => {
             });
             tcStub.cacheFile.resolves('C:/tmp/cache/');
             tcStub.downloadTool.resolves('C:/tmp/downloads');
-            await installNativeClient('11');
-            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://download.microsoft.com/download/B/E/D/BED73AAC-3C8A-43F5-AF4F-EB4FEA6C8F3A/ENU/x86/sqlncli.msi');
+            await installOdbc('17');
+            expect(tcStub.downloadTool).to.have.been.calledOnceWith('https://go.microsoft.com/fwlink/?linkid=2238791');
             expect(tcStub.cacheFile).to.have.callCount(1);
-            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
+            expect(execStub.exec).to.have.been.calledOnceWith('msiexec', [
+                '/passive',
+                '/i',
+                'C:/tmp/cache/msodbcsql.msi',
+                'IACCEPTMSODBCSQLLICENSETERMS=YES',
+            ], {
                 windowsVerbatimArguments: true,
             });
-            expect;
-            expect(execStub.exec.firstCall.args[1]).to.contain('C:/tmp/cache/sqlncli.msi');
         });
     });
 });
