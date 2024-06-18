@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.3.0...v2.0.0) (2024-06-18)
+
+### ⚠ BREAKING CHANGES
+
+* The runtime is now upgraded to Node20 from Node16
+* upgrade runtime to node20
+
+### Features
+
+* upgrade node runtime to Node20 ([1b7e069](https://github.com/tediousjs/setup-sqlserver/commit/1b7e069a3302a0189bb331edd9d81453bde559b6))
+* upgrade runtime to node20 ([5f58c26](https://github.com/tediousjs/setup-sqlserver/commit/5f58c26a35ad10819b50221626de208baed965bd))
+
 # [1.3.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.2.0...v1.3.0) (2023-09-12)
 
 
