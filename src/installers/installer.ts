@@ -18,7 +18,7 @@ export abstract class Installer {
     }
 
     protected getArch(): string {
-        return process.arch === 'x32' ? 'x86' : 'x64';
+        return process.arch === 'x64' ? 'x64' : 'x86';
     }
 
     protected downloadInstaller(url: string, extName?: string) {
