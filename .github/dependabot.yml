@@ -24,6 +24,10 @@ updates:
           - "mocha"
           - "nyc"
           - "@istanbuljs/nyc-config-typescript"
+      lint-tools:
+        patterns:
+          - "eslint"
+          - "@typescript-eslint/*"
       action-tools:
         patterns:
           - "@actions/*"
