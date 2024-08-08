@@ -147,6 +147,7 @@ jobs:
           sqlserver-version: ${{ matrix.sqlserver }}
           native-client-version: 11
           odbc-version: 17
+          install-updates: true
   release:
     name: Release
     concurrency: release

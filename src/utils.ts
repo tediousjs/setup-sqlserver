@@ -2,6 +2,7 @@ import * as exec from '@actions/exec';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as io from '@actions/io';
+import * as http from '@actions/http-client';
 import { basename, extname, dirname, join as joinPaths } from 'path';
 import { VersionConfig } from './versions';
 import { generateFileHash } from './crypto';
@@ -50,6 +51,7 @@ export interface Inputs {
     skipOsCheck: boolean;
     nativeClientVersion: string;
     odbcVersion: string;
+    installUpdates: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export function gatherInputs(): Inputs {
         skipOsCheck: core.getBooleanInput('skip-os-check'),
         nativeClientVersion: core.getInput('native-client-version'),
         odbcVersion: core.getInput('odbc-version'),
+        installUpdates: core.getBooleanInput('install-updates'),
     };
 }
 
@@ -170,7 +173,44 @@ export async function downloadExeInstaller(config: VersionConfig): Promise<strin
     return joinPaths(toolPath, 'setup.exe');
 }
 
-
+/**
+ * Downloads cumulative updates for supported versions.
+ *
+ * @param {VersionConfig} config
+ * @returns {Promise<string>}
+ */
+export async function downloadUpdateInstaller(config: VersionConfig): Promise<string> {
+    if (!config.updateUrl) {
+        throw new Error('No update url provided');
+    }
+    // resolve download url
+    let downloadLink: string | null = null;
+    if (!config.updateUrl.endsWith('.exe')) {
+        const client = new http.HttpClient();
+        const res = await client.get(config.updateUrl);
+        if (res.message.statusCode && res.message.statusCode >= 200 && res.message.statusCode < 300) {
+            const body = await res.readBody();
+            const [, link] = body.match(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/) ?? [];
+            if (link) {
+                downloadLink = link;
+            }
+        }
+        if (!downloadLink) {
+            core.warning('Unable to download cumulative updates');
+            return '';
+        }
+    }
+    core.info(`Downloading cumulative update from ${downloadLink ?? config.updateUrl}`);
+    const updatePath = await downloadTool(downloadLink ?? config.updateUrl);
+    if (core.isDebug()) {
+        const hash = await generateFileHash(updatePath);
+        core.debug(`Got update file with hash SHA256=${hash.toString('base64')}`);
+    }
+    core.info('Adding to the cache');
+    const toolPath = await tc.cacheFile(updatePath, 'sqlupdate.exe', 'sqlupdate', config.version);
+    core.debug(`Cached @ ${toolPath}`);
+    return joinPaths(toolPath, 'sqlupdate.exe');
+}
 
 /**
  * Gather installation summary file. Used after installation to output summary data.

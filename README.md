@@ -39,6 +39,11 @@ See [action.yml](./action.yml):
     # action. A maximum of 10 attempts is made.
     # Default: true
     wait-for-ready: true
+
+    # Attempt to install latest cumulative updates during the installation process
+    # (not available for all versions).
+    # Default: false
+    install-updates: false
 ```
 <!-- end usage -->
 
