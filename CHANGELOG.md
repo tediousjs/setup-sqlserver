@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v2.0.0...v2.1.0) (2024-08-09)
+
+### Features
+
+* add cumulative update installation for supported versions ([b2c3216](https://github.com/tediousjs/setup-sqlserver/commit/b2c3216f680d22ac0b4ed16ad0bfc8490c242f10))
+
 ## [2.0.0](https://github.com/tediousjs/setup-sqlserver/compare/v1.3.0...v2.0.0) (2024-06-18)
 
 ### ⚠ BREAKING CHANGES
