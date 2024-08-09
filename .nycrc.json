@@ -1,6 +1,0 @@
-{
-  "extends": "@istanbuljs/nyc-config-typescript",
-  "include": ["src"],
-  "exclude": ["src/main.ts", "src/pre.ts", "src/post.ts"],
-  "all": true
-}

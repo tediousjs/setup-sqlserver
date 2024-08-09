@@ -1,9 +1,0 @@
-preset: 'conventionalcommits'
-plugins:
-  - '@semantic-release/commit-analyzer'
-  - '@semantic-release/release-notes-generator'
-  - ['@semantic-release/changelog', {changelogTitle: '# Changelog'}]
-  - ['@semantic-release/npm', { npmPublish: false, tarballDir: "./.package" }]
-  - '@semantic-release/github'
-  - ['@semantic-release/git', {message: "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"}]
-  - ['@semantic-release/exec', { publishCmd: "./misc/publish.sh 'v${nextRelease.version}'" }]
