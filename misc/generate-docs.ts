@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
@@ -36,19 +36,25 @@ import { version } from '../package.json';
 //
 // This script rebuilds the usage section in the README.md to be consistent with the action.yml
 
-function updateUsage(
+async function updateUsage(
     actionReference: string,
     actionYamlPath = 'action.yml',
     readmePath = 'README.md',
     startToken = '<!-- start usage -->',
     endToken = '<!-- end usage -->'
-): void {
+): Promise<void> {
     if (!actionReference) {
         throw new Error('Parameter actionReference must not be empty');
     }
 
-    // Load the action.yml
-    const actionYaml = yaml.safeLoad(fs.readFileSync(actionYamlPath).toString()) as {
+    // load files
+    const [action, readme] = await Promise.all([
+        fs.readFile(actionYamlPath).then((f) => f.toString()),
+        fs.readFile(readmePath).then((f) => f.toString()),
+    ]);
+
+    // parse the action.yml
+    const actionYaml = yaml.load(action) as {
         inputs: Record<string, {
             description: string;
             default?: string;
@@ -58,17 +64,14 @@ function updateUsage(
         }>;
     };
 
-    // Load the README
-    const originalReadme = fs.readFileSync(readmePath).toString();
-
     // Find the start token
-    const startTokenIndex = originalReadme.indexOf(startToken);
+    const startTokenIndex = readme.indexOf(startToken);
     if (startTokenIndex < 0) {
         throw new Error(`Start token '${startToken}' not found`);
     }
 
     // Find the end token
-    const endTokenIndex = originalReadme.indexOf(endToken);
+    const endTokenIndex = readme.indexOf(endToken);
     if (endTokenIndex < 0) {
         throw new Error(`End token '${endToken}' not found`);
     } else if (endTokenIndex < startTokenIndex) {
@@ -79,7 +82,7 @@ function updateUsage(
     const newReadme: string[] = [];
 
     // Append the beginning
-    newReadme.push(originalReadme.substr(0, startTokenIndex + startToken.length));
+    newReadme.push(readme.substring(0, startTokenIndex + startToken.length));
 
     // Build the new usage section
     newReadme.push('```yaml', `- uses: ${actionReference}`, '  with:');
@@ -158,10 +161,10 @@ function updateUsage(
     newReadme.push('```');
 
     // Append the end
-    newReadme.push(originalReadme.substr(endTokenIndex));
+    newReadme.push(readme.substr(endTokenIndex));
 
     // Write the new README
-    fs.writeFileSync(readmePath, newReadme.join(os.EOL));
+    await fs.writeFile(readmePath, newReadme.join(os.EOL));
 }
 
 updateUsage(
