@@ -1,5 +1,5 @@
+import * as assert from 'node:assert';
 import * as versions from '../src/versions';
-import * as assert from 'assert';
 
 describe('versions', () => {
     describe('VERSIONS', () => {

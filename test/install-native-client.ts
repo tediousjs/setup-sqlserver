@@ -3,9 +3,9 @@ import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
 import * as io from '@actions/io';
-import installNativeClient from '../src/install-native-client';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
+import installNativeClient from '../src/install-native-client';
 use(sinonChai);
 
 describe('install-native-client', () => {

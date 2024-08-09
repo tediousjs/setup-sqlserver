@@ -1,4 +1,4 @@
-import fs, { ReadStream } from 'fs';
+import fs, { ReadStream } from 'node:fs';
 import { restore, SinonStubbedInstance, SinonStubbedMember, stub } from 'sinon';
 import { expect } from 'chai';
 import { generateFileHash } from '../src/crypto';

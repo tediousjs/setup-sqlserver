@@ -1,22 +1,21 @@
-import os from 'os';
+import os from 'node:os';
 import fs from 'fs/promises';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
+import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
 import * as versions from '../src/versions';
 import * as nativeClient from '../src/install-native-client';
 import * as odbcDriver from '../src/install-odbc';
-import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
 import * as utils from '../src/utils';
 import install from '../src/install';
-import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
-import { VersionConfig } from '../src/versions';
 use(sinonChai);
 
 describe('install', () => {
     let reverts: (() => void)[] = [];
-    let versionStub: SinonStubbedInstance<Map<string, VersionConfig>>;
+    let versionStub: SinonStubbedInstance<Map<string, versions.VersionConfig>>;
     let osStub: SinonStubbedInstance<typeof os>;
     let coreStub: SinonStubbedInstance<typeof core>;
     let utilsStub: SinonStubbedInstance<typeof utils>;

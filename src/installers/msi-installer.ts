@@ -1,8 +1,8 @@
+import { join as joinPaths } from 'path';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
-import { Installer, InstallerConfig } from './installer';
-import { join as joinPaths } from 'path';
 import * as exec from '@actions/exec';
+import { Installer, InstallerConfig } from './installer';
 
 export interface Urls {
     x64?: string;

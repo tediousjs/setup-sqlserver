@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
 import { stub, restore, SinonStubbedInstance } from 'sinon';
@@ -6,7 +7,6 @@ import * as tc from '@actions/tool-cache';
 import * as io from '@actions/io';
 import * as exec from '@actions/exec';
 import { MsiInstaller } from '../../src/installers';
-import { randomUUID } from 'crypto';
 use(sinonChai);
 
 describe('Installer', () => {

@@ -1,18 +1,17 @@
-import * as utils from '../src/utils';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { IncomingMessage } from 'node:http';
 import * as exec from '@actions/exec';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as io from '@actions/io';
 import * as glob from '@actions/glob';
 import * as http from '@actions/http-client';
+import { Globber } from '@actions/glob';
 import { stub, restore, SinonStubbedMember, SinonStubbedInstance, SinonStub, createStubInstance } from 'sinon';
 import { expect, use } from 'chai';
 import sinonChai from 'sinon-chai';
-import { randomBytes, randomUUID } from 'crypto';
+import * as utils from '../src/utils';
 import * as crypto from '../src/crypto';
-import { Globber } from '@actions/glob';
-import { gatherSummaryFiles } from '../src/utils';
-import { IncomingMessage } from 'node:http';
 use(sinonChai);
 
 const windows2022 = `
@@ -476,25 +475,25 @@ describe('utils', () => {
             } as unknown as Globber);
         });
         it('returns empty array if no files matched', async () => {
-            const res = await gatherSummaryFiles();
+            const res = await utils.gatherSummaryFiles();
             expect(res).to.deep.equal([]);
         });
         it('returns found files', async () => {
             globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
-            const res = await gatherSummaryFiles();
+            const res = await utils.gatherSummaryFiles();
             expect(res).to.deep.equal(['C:/tmp/summary.txt']);
             expect(glob.create).to.have.callCount(1);
         });
         it('tries to find details files', async () => {
             globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
-            const res = await gatherSummaryFiles(true);
+            const res = await utils.gatherSummaryFiles(true);
             expect(res).to.deep.equal(['C:/tmp/summary.txt']);
             expect(glob.create).to.have.callCount(2);
         });
         it('finds detail file', async () => {
             globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
             globFunc.onSecondCall().resolves(['C:/tmp/2021/details.txt', 'C:/tmp/2022/details.txt']);
-            const res = await gatherSummaryFiles(true);
+            const res = await utils.gatherSummaryFiles(true);
             expect(res).to.deep.equal(['C:/tmp/summary.txt', 'C:/tmp/2022/details.txt']);
             expect(glob.create).to.have.callCount(2);
         });
