@@ -7,7 +7,7 @@ This action installs a version of SQL Server on Windows based GitHub Action Runn
 See [action.yml](./action.yml):
 <!-- start usage -->
 ```yaml
-- uses: tediousjs/setup-sqlserver@v1
+- uses: tediousjs/setup-sqlserver@v2
   with:
     # Skip OS checks that will stop installation attempts preemptively.
     # Default: false
