@@ -1,6 +1,6 @@
+import { basename, dirname, extname, join as joinPaths } from 'path';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
-import { basename, dirname, extname, join as joinPaths } from 'path';
 import * as io from '@actions/io';
 
 export interface InstallerConfig {

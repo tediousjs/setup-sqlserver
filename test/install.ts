@@ -1,22 +1,21 @@
-import os from 'os';
+import os from 'node:os';
 import fs from 'fs/promises';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
+import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
 import * as versions from '../src/versions';
 import * as nativeClient from '../src/install-native-client';
 import * as odbcDriver from '../src/install-odbc';
-import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
 import * as utils from '../src/utils';
 import install from '../src/install';
-import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
-import { VersionConfig } from '../src/versions';
 use(sinonChai);
 
 describe('install', () => {
     let reverts: (() => void)[] = [];
-    let versionStub: SinonStubbedInstance<Map<string, VersionConfig>>;
+    let versionStub: SinonStubbedInstance<Map<string, versions.VersionConfig>>;
     let osStub: SinonStubbedInstance<typeof os>;
     let coreStub: SinonStubbedInstance<typeof core>;
     let utilsStub: SinonStubbedInstance<typeof utils>;
@@ -35,11 +34,13 @@ describe('install', () => {
         versionStub.get.withArgs('box').returns({
             version: '2022',
             exeUrl: 'https://example.com/installer.exe',
-            boxUrl: 'https://example.om/installer.box',
+            boxUrl: 'https://example.com/installer.box',
+            updateUrl: 'https://example.com/update.html',
         });
         versionStub.get.withArgs('exe').returns({
             version: '2019',
             exeUrl: 'https://example.com/setup.exe',
+            updateUrl: 'https://example.com/update.exe',
         });
         versionStub.get.withArgs('maxOs').returns({
             version: '2017',
@@ -73,11 +74,13 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         utilsStub.getOsVersion.resolves(2022);
         utilsStub.gatherSummaryFiles.resolves([]);
         utilsStub.downloadExeInstaller.resolves('C:/tmp/exe/setup.exe');
         utilsStub.downloadBoxInstaller.resolves('C:/tmp/box/setup.exe');
+        utilsStub.downloadUpdateInstaller.resolves('C:/tmp/exe/sqlupdate.exe');
         utilsStub.waitForDatabase.resolves(0);
         osStub = stub(os);
         osStub.platform.returns('win32');
@@ -115,6 +118,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         try {
             await install();
@@ -138,12 +142,71 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
     });
+    it('downloads cumulative updates', async () => {
+        utilsStub.gatherInputs.returns({
+            version: 'exe',
+            password: 'secret password',
+            collation: 'SQL_Latin1_General_CP1_CI_AS',
+            installArgs: [],
+            wait: true,
+            skipOsCheck: false,
+            nativeClientVersion: '',
+            odbcVersion: '',
+            installUpdates: true,
+        });
+        await install();
+        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        expect(execStub.exec.firstCall.args[1]).to.contain.members([
+            '/UPDATEENABLED=1',
+            '/UpdateSource=C:/tmp/exe',
+        ]);
+    });
+    it('uses cached updates if found', async () => {
+        tcStub.find.withArgs('sqlupdate').returns('C:/tool-cache/sql-update');
+        utilsStub.gatherInputs.returns({
+            version: 'exe',
+            password: 'secret password',
+            collation: 'SQL_Latin1_General_CP1_CI_AS',
+            installArgs: [],
+            wait: true,
+            skipOsCheck: false,
+            nativeClientVersion: '',
+            odbcVersion: '',
+            installUpdates: true,
+        });
+        await install();
+        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        expect(execStub.exec.firstCall.args[1]).to.contain.members([
+            '/UPDATEENABLED=1',
+            '/UpdateSource=C:/tool-cache/sql-update',
+        ]);
+    });
+    it('skips cumulative updates if no update url', async () => {
+        utilsStub.gatherInputs.returns({
+            version: 'minOs',
+            password: 'secret password',
+            collation: 'SQL_Latin1_General_CP1_CI_AS',
+            installArgs: [],
+            wait: true,
+            skipOsCheck: false,
+            nativeClientVersion: '',
+            odbcVersion: '',
+            installUpdates: true,
+        });
+        await install();
+        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        expect(execStub.exec.firstCall.args[1]).to.not.contain.members([
+            '/UPDATEENABLED=1',
+            '/UpdateSource=C:/tmp/exe',
+        ]);
+    });
     it('uses cached tool if found', async () => {
-        tcStub.find.returns('C:/tool-cache/sql-server');
+        tcStub.find.withArgs('sqlserver').returns('C:/tool-cache/sql-server');
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tool-cache/sql-server/setup.exe"', match.array, { windowsVerbatimArguments: true });
     });
@@ -157,6 +220,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         try {
             await install();
@@ -177,6 +241,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         try {
             await install();
@@ -197,6 +262,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         try {
             await install();
@@ -217,6 +283,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -232,6 +299,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -246,6 +314,7 @@ describe('install', () => {
             skipOsCheck: true,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         await install();
         expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
@@ -282,6 +351,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '',
             odbcVersion: '',
+            installUpdates: false,
         });
         const stubReadfile = stub(fs, 'readFile');
         stubReadfile.resolves(Buffer.from('test data'));
@@ -327,6 +397,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '11',
             odbcVersion: '',
+            installUpdates: false,
         });
         await install();
         expect(stubNc.default).to.have.been.calledOnceWith('11');
@@ -341,6 +412,7 @@ describe('install', () => {
             skipOsCheck: false,
             nativeClientVersion: '11',
             odbcVersion: '18',
+            installUpdates: false,
         });
         await install();
         expect(stubNc.default).to.have.been.calledOnceWith('11');

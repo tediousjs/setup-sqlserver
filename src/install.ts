@@ -1,5 +1,5 @@
 import os from 'os';
-import { basename, join as joinPaths } from 'path';
+import { basename, dirname, join as joinPaths } from 'path';
 import { readFile } from 'fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
@@ -8,6 +8,7 @@ import { VersionConfig, VERSIONS } from './versions';
 import {
     downloadBoxInstaller,
     downloadExeInstaller,
+    downloadUpdateInstaller,
     gatherInputs,
     gatherSummaryFiles,
     getOsVersion,
@@ -33,6 +34,15 @@ function findOrDownloadTool(config: VersionConfig): Promise<string> {
     return downloadExeInstaller(config);
 }
 
+function findOrDownloadUpdates(config: VersionConfig): Promise<string> {
+    const toolPath = tc.find('sqlupdate', config.version);
+    if (toolPath) {
+        core.info(`Found in cache @ ${toolPath}`);
+        return Promise.resolve(joinPaths(toolPath, 'sqlupdate.exe'));
+    }
+    return downloadUpdateInstaller(config);
+}
+
 export default async function install() {
     let threw = false;
     const {
@@ -44,6 +54,7 @@ export default async function install() {
         skipOsCheck,
         nativeClientVersion,
         odbcVersion,
+        installUpdates,
     } = gatherInputs();
     // we only support windows for now. But allow crazy people to skip this check if they like...
     if (!skipOsCheck && os.platform() !== 'win32') {
@@ -86,6 +97,16 @@ export default async function install() {
     }
     // Initial checks complete - fetch the installer
     const toolPath = await core.group(`Fetching install media for ${version}`, () => findOrDownloadTool(config));
+    if (installUpdates) {
+        if (!config.updateUrl) {
+            core.info('Skipping update installation - version not supported');
+        } else {
+            const updatePath = await core.group(`Fetching cumulative updates for ${version}`, () => findOrDownloadUpdates(config));
+            if (updatePath) {
+                installArgs.push('/UPDATEENABLED=1', `/UpdateSource=${dirname(updatePath)}`);
+            }
+        }
+    }
     const instanceName = 'MSSQLSERVER';
     try {
         // @todo - make sure that the arguments are unique / don't conflict

@@ -23,6 +23,9 @@ inputs:
   wait-for-ready:
     description: 'Wait for the database to respond successfully to queries before completing the action. A maximum of 10 attempts is made.'
     default: 'true'
+  install-updates:
+    description: 'Attempt to install latest cumulative updates during the installation process (not available for all versions).'
+    default: 'false'
 outputs:
   sa-password:
     description: 'The SA password, this will be the same as the input, but can be useful when relying on the default value.'

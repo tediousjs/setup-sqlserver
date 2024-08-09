@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { version } from '../package.json';
 
 /**
  * From @actions/checkout
@@ -164,7 +165,7 @@ function updateUsage(
 }
 
 updateUsage(
-    'tediousjs/setup-sqlserver@v1',
+    `tediousjs/setup-sqlserver@v${version.split('.')[0]}`,
     path.join(__dirname, '..', 'action.yml'),
     path.join(__dirname, '..', 'README.md')
 );
