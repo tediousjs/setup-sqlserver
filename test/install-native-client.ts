@@ -73,7 +73,6 @@ describe('install-native-client', () => {
             expect(execStub.exec).to.have.been.calledOnceWith('msiexec', match.array, {
                 windowsVerbatimArguments: true,
             });
-            expect;
             expect(execStub.exec.firstCall.args[1]).to.contain('C:/tmp/cache/sqlncli.msi');
         });
     });
