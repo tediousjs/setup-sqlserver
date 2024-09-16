@@ -193,10 +193,14 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
             const [, link] = body.match(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/) ?? [];
             if (link) {
                 downloadLink = link;
+            } else {
+                core.info('Unable to find download link in body');
+                core.debug(body);
             }
         }
         if (!downloadLink) {
             core.warning('Unable to download cumulative updates');
+            core.info(`Response code: ${res.message.statusCode}`);
             return '';
         }
     }
