@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.1](https://github.com/tediousjs/setup-sqlserver/compare/v2.1.0...v2.1.1) (2024-09-16)
+
+### Bug Fixes
+
+* improve logging around failed cumulative updates ([4657282](https://github.com/tediousjs/setup-sqlserver/commit/4657282e03d8bd126d6086f161c6b0c755863874))
+
 ## [2.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v2.0.0...v2.1.0) (2024-08-09)
 
 ### Features
