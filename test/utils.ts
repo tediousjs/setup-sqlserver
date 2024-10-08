@@ -14,126 +14,26 @@ import * as utils from '../src/utils';
 import * as crypto from '../src/crypto';
 use(sinonChai);
 
-const windows2022 = `
-  Host Name:                 fv-az618-92
-  OS Name:                   Microsoft Windows Server 2022 Datacenter
-  OS Version:                10.0.20348 N/A Build 20348
-  OS Manufacturer:           Microsoft Corporation
-  OS Configuration:          Standalone Server
-  OS Build Type:             Multiprocessor Free
-  Registered Owner:          N/A
-  Registered Organization:   N/A
-  Product ID:                00454-60000-00001-AA926
-  Original Install Date:     8/8/2023, 9:08:26 AM
-  System Boot Time:          8/9/2023, 3:13:18 PM
-  System Manufacturer:       Microsoft Corporation
-  System Model:              Virtual Machine
-  System Type:               x64-based PC
-  Processor(s):              1 Processor(s) Installed.
-                             [01]: Intel64 Family 6 Model 79 Stepping 1 GenuineIntel ~2295 Mhz
-  BIOS Version:              American Megatrends Inc. 090008 , 12/7/2018
-  Windows Directory:         C:\\Windows
-  System Directory:          C:\\Windows\\system32
-  Boot Device:               \\Device\\HarddiskVolume1
-  System Locale:             en-us;English (United States)
-  Input Locale:              en-us;English (United States)
-  Time Zone:                 (UTC) Coordinated Universal Time
-  Total Physical Memory:     7,168 MB
-  Available Physical Memory: 5,426 MB
-  Virtual Memory: Max Size:  8,959 MB
-  Virtual Memory: Available: 7,373 MB
-  Virtual Memory: In Use:    1,586 MB
-  Page File Location(s):     D:\\pagefile.sys
-  Domain:                    WORKGROUP
-  Logon Server:              \\\\fv-az618-92
-  Hotfix(s):                 5 Hotfix(s) Installed.
-                             [01]: KB5028852
-                             [02]: KB5028858
-                             [03]: KB5011048
-                             [04]: KB5028171
-                             [05]: KB5028317
-  Network Card(s):           1 NIC(s) Installed.
-                             [01]: Microsoft Hyper-V Network Adapter
-                                   Connection Name: Ethernet
-                                   DHCP Enabled:    Yes
-                                   DHCP Server:     168.63.129.16
-                                   IP address(es)
-                                   [01]: 10.1.0.141
-                                   [02]: fe80::deb6:64f:8300:ef77
-  Hyper-V Requirements:      A hypervisor has been detected. Features required for Hyper-V will not be displayed.
-`;
-
-const windows2019 = `
-  Host Name:                 fv-az276-691
-  OS Name:                   Microsoft Windows Server 2019 Datacenter
-  OS Version:                10.0.17763 N/A Build 17763
-  OS Manufacturer:           Microsoft Corporation
-  OS Configuration:          Standalone Server
-  OS Build Type:             Multiprocessor Free
-  Registered Owner:          N/A
-  Registered Organization:   N/A
-  Product ID:                00430-00000-00000-AA138
-  Original Install Date:     8/3/2023, 10:11:03 AM
-  System Boot Time:          8/9/2023, 3:19:20 PM
-  System Manufacturer:       Microsoft Corporation
-  System Model:              Virtual Machine
-  System Type:               x64-based PC
-  Processor(s):              1 Processor(s) Installed.
-                             [01]: Intel64 Family 6 Model 63 Stepping 2 GenuineIntel ~2394 Mhz
-  BIOS Version:              American Megatrends Inc. 090008 , 12/7/2018
-  Windows Directory:         C:\\Windows
-  System Directory:          C:\\Windows\\system32
-  Boot Device:               \\Device\\HarddiskVolume1
-  System Locale:             en-us;English (United States)
-  Input Locale:              en-us;English (United States)
-  Time Zone:                 (UTC) Coordinated Universal Time
-  Total Physical Memory:     7,168 MB
-  Available Physical Memory: 5,543 MB
-  Virtual Memory: Max Size:  8,959 MB
-  Virtual Memory: Available: 7,426 MB
-  Virtual Memory: In Use:    1,533 MB
-  Page File Location(s):     D:\\pagefile.sys
-  Domain:                    WORKGROUP
-  Logon Server:              \\\\fv-az276-691
-  Hotfix(s):                 6 Hotfix(s) Installed.
-                             [01]: KB5028855
-                             [02]: KB4486153
-                             [03]: KB4589208
-                             [04]: KB5004424
-                             [05]: KB5028168
-                             [06]: KB5028316
-  Network Card(s):           2 NIC(s) Installed.
-                             [01]: Hyper-V Virtual Ethernet Adapter
-                                   Connection Name: vEthernet (nat)
-                                   DHCP Enabled:    No
-                                   IP address(es)
-                                   [01]: 172.27.224.1
-                                   [02]: fe80::39cd:87ac:c9ad:cd5e
-                             [02]: Microsoft Hyper-V Network Adapter
-                                   Connection Name: Ethernet 2
-                                   DHCP Enabled:    Yes
-                                   DHCP Server:     168.63.129.16
-                                   IP address(es)
-                                   [01]: 10.1.36.0
-                                   [02]: fe80::ae04:627e:a23b:d046
-  Hyper-V Requirements:      A hypervisor has been detected. Features required for Hyper-V will not be displayed.
-`;
 describe('utils', () => {
     let coreStub: SinonStubbedInstance<typeof core>;
+    let platformStub: SinonStubbedInstance<typeof core.platform>;
     beforeEach('stub core', () => {
+        platformStub = stub(core.platform);
         coreStub = stub(core);
     });
     afterEach('restore stubs', () => {
         restore();
     });
     describe('.getOsVersion()', () => {
-        let getExecOutput: SinonStubbedMember<typeof exec.getExecOutput>;
         beforeEach('stub debs', () => {
-            getExecOutput = stub(exec, 'getExecOutput');
-            getExecOutput.withArgs('systeminfo').resolves({
-                exitCode: 0,
-                stdout: windows2019,
-                stderr: '',
+            platformStub.getDetails.resolves({
+                name: 'Microsoft Windows Server 2019 Datacenter',
+                platform: 'win32',
+                arch: 'x64',
+                version: '10.0.17763',
+                isWindows: true,
+                isMacOS: false,
+                isLinux: false,
             });
         });
         it('correctly returns for windows-2019', async () => {
@@ -141,10 +41,14 @@ describe('utils', () => {
             expect(out).to.equal(2019);
         });
         it('correctly returns for windows-2022', async () => {
-            getExecOutput.withArgs('systeminfo').resolves({
-                exitCode: 0,
-                stdout: windows2022,
-                stderr: '',
+            platformStub.getDetails.resolves({
+                name: 'Microsoft Windows Server 2022 Datacenter',
+                platform: 'win32',
+                arch: 'x64',
+                version: '10.0.20348',
+                isWindows: true,
+                isMacOS: false,
+                isLinux: false,
             });
             const out = await utils.getOsVersion();
             expect(out).to.equal(2022);
@@ -154,30 +58,25 @@ describe('utils', () => {
             await utils.getOsVersion();
             expect(coreStub.isDebug).to.have.callCount(1);
             expect(coreStub.startGroup).to.have.been.calledOnceWith('systeminfo');
-            expect(coreStub.debug).to.have.been.calledOnceWith(windows2019);
+            expect(coreStub.debug).to.have.been.calledOnceWith("name: Microsoft Windows Server 2019 Datacenter\nplatform: win32\narch: x64\nversion: 10.0.17763\nisWindows: true\nisMacOS: false\nisLinux: false");
             expect(coreStub.endGroup).to.have.callCount(1);
         });
         it('fails gracefully when error is thrown', async () => {
             const err = new Error('synthetic error');
-            getExecOutput.withArgs('systeminfo').rejects(err);
+            platformStub.getDetails.rejects(err);
             const res = await utils.getOsVersion();
             expect(res).to.equal(null);
             expect(coreStub.warning).to.have.been.calledOnceWithExactly(err);
         });
         it('fails gracefully with bad output', async () => {
-            getExecOutput.withArgs('systeminfo').resolves({
-                exitCode: 0,
-                stdout: 'os name: not a number',
-                stderr: '',
-            });
-            const res = await utils.getOsVersion();
-            expect(res).to.equal(null);
-        });
-        it('fails gracefully with no output', async () => {
-            getExecOutput.withArgs('systeminfo').resolves({
-                exitCode: 0,
-                stdout: '',
-                stderr: '',
+            platformStub.getDetails.resolves({
+                name: 'not a number',
+                platform: 'win32',
+                arch: 'x64',
+                version: '10.0.20348',
+                isWindows: true,
+                isMacOS: false,
+                isLinux: false,
             });
             const res = await utils.getOsVersion();
             expect(res).to.equal(null);

@@ -17,23 +17,17 @@ import * as glob from '@actions/glob';
  */
 export async function getOsVersion() {
     try {
-        const systeminfo = await exec.getExecOutput('systeminfo', [], {
-            silent: true,
-        });
+        const systeminfo = await core.platform.getDetails();
         // output the systeminfo in debug mode
         if (core.isDebug()) {
             core.startGroup('systeminfo');
-            core.debug(systeminfo.stdout);
+            core.debug(Object.entries(systeminfo).map((tuple) => tuple.join(': ')).join('\n'));
             core.endGroup();
         }
-        // try to parse out the os name
-        const matches = systeminfo.stdout.match(/os name:\s+(.*)/i);
-        if (matches) {
-            // parse the "version" (year)
-            const version = matches[1].match(/([0-9]+)/);
-            if (version) {
-                return parseInt(version[1], 10);
-            }
+        // parse the "version" (year)
+        const version = systeminfo.name.match(/([0-9]+)/);
+        if (version) {
+            return parseInt(version[1], 10);
         }
     } catch (e) {
         // don't throw errors, so the action can be as permissive as possible
