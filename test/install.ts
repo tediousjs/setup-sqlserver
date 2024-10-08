@@ -1,4 +1,3 @@
-import os from 'node:os';
 import fs from 'fs/promises';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
@@ -16,7 +15,6 @@ use(sinonChai);
 describe('install', () => {
     let reverts: (() => void)[] = [];
     let versionStub: SinonStubbedInstance<Map<string, versions.VersionConfig>>;
-    let osStub: SinonStubbedInstance<typeof os>;
     let coreStub: SinonStubbedInstance<typeof core>;
     let utilsStub: SinonStubbedInstance<typeof utils>;
     let tcStub: SinonStubbedInstance<typeof tc>;
@@ -82,11 +80,12 @@ describe('install', () => {
         utilsStub.downloadBoxInstaller.resolves('C:/tmp/box/setup.exe');
         utilsStub.downloadUpdateInstaller.resolves('C:/tmp/exe/sqlupdate.exe');
         utilsStub.waitForDatabase.resolves(0);
-        osStub = stub(os);
-        osStub.platform.returns('win32');
         coreStub = stub(core);
         coreStub.group.callsFake((message, cb) => {
             return cb();
+        });
+        stub(coreStub, 'platform').value({
+            platform: 'win32',
         });
         tcStub = stub(tc);
         tcStub.find.returns('');
@@ -99,7 +98,9 @@ describe('install', () => {
         reverts = [];
     });
     it('fails if bad os', async () => {
-        osStub.platform.returns('linux');
+        stub(coreStub, 'platform').value({
+            platform: 'linux',
+        });
         try {
             await install();
         } catch (e) {

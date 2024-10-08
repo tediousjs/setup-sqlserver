@@ -1,4 +1,3 @@
-import os from 'os';
 import { basename, dirname, join as joinPaths } from 'path';
 import { readFile } from 'fs/promises';
 import * as core from '@actions/core';
@@ -57,8 +56,8 @@ export default async function install() {
         installUpdates,
     } = gatherInputs();
     // we only support windows for now. But allow crazy people to skip this check if they like...
-    if (!skipOsCheck && os.platform() !== 'win32') {
-        throw new Error(`setup-sqlserver only supports Windows runners, got: ${os.platform()}`);
+    if (!skipOsCheck && core.platform.platform !== 'win32') {
+        throw new Error(`setup-sqlserver only supports Windows runners, got: ${core.platform.platform}`);
     }
     const osVersion = await getOsVersion();
     if (!VERSIONS.has(version)) {
