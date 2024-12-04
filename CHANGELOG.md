@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.0](https://github.com/tediousjs/setup-sqlserver/compare/v2.1.1...v2.2.0) (2024-12-04)
+
+### Features
+
+* use github core platform helper instead of node:os ([c760fe0](https://github.com/tediousjs/setup-sqlserver/commit/c760fe037f85d2d6373c1570af984f14197d88bd))
+
 ## [2.1.1](https://github.com/tediousjs/setup-sqlserver/compare/v2.1.0...v2.1.1) (2024-09-16)
 
 ### Bug Fixes
