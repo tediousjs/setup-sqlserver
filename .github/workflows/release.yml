@@ -12,7 +12,7 @@ permissions:
 jobs:
   commitlint:
     name: Lint commits
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
         run: npx commitlint --from ${{ github.event.pull_request.head.sha }}~${{ github.event.pull_request.commits }} --to ${{ github.event.pull_request.head.sha }} --verbose
   codelint:
     name: Lint code
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
         run: npm run lint
   buildlint:
     name: Check built files
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
         run: git diff-files --quiet -w
   test:
     name: Run tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - commitlint
       - codelint
@@ -91,7 +91,7 @@ jobs:
         run: npm run test -- --forbid-only
   coverage:
     name: Test coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - commitlint
       - codelint
@@ -152,7 +152,7 @@ jobs:
     name: Release
     concurrency: release
     if: ${{ github.repository_owner == 'tediousjs' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - commitlint
       - codelint
