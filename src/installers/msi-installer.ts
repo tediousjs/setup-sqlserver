@@ -1,4 +1,4 @@
-import { join as joinPaths } from 'path';
+import { join as joinPaths } from 'node:path';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
