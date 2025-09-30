@@ -1,5 +1,5 @@
-import { createHash } from 'crypto';
-import { createReadStream } from 'fs';
+import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 
 /**
  * Generate a sha256 hash of a file from its path.

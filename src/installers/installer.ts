@@ -1,4 +1,4 @@
-import { basename, dirname, extname, join as joinPaths } from 'path';
+import { basename, dirname, extname, join as joinPaths } from 'node:path';
 import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as io from '@actions/io';

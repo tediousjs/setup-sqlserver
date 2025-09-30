@@ -3,7 +3,7 @@ import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import * as io from '@actions/io';
 import * as http from '@actions/http-client';
-import { basename, extname, dirname, join as joinPaths } from 'path';
+import { basename, extname, dirname, join as joinPaths } from 'node:path';
 import { VersionConfig } from './versions';
 import { generateFileHash } from './crypto';
 import * as glob from '@actions/glob';

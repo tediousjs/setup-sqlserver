@@ -1,5 +1,5 @@
-import { basename, dirname, join as joinPaths } from 'path';
-import { readFile } from 'fs/promises';
+import { basename, dirname, join as joinPaths } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as tc from '@actions/tool-cache';
