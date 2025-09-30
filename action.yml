@@ -32,5 +32,5 @@ outputs:
   instance-name:
     description: 'The instance name for the SQL Server.'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'lib/main/index.js'
