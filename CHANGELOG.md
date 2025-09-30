@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.0.0](https://github.com/tediousjs/setup-sqlserver/compare/v2.2.0...v3.0.0) (2025-09-30)
+
+### ⚠ BREAKING CHANGES
+
+* Upgrade the action runtime to node24.
+
+### Features
+
+* update action to use node24 ([118c752](https://github.com/tediousjs/setup-sqlserver/commit/118c7523a928f7b82764cb7d9bf52af91d6d8437))
+
+### Bug Fixes
+
+* use `node:` prefixed imports ([28f08b4](https://github.com/tediousjs/setup-sqlserver/commit/28f08b4a3d8fd86bd98713fcc7fcfa3e90c760c7))
+
 ## [2.2.0](https://github.com/tediousjs/setup-sqlserver/compare/v2.1.1...v2.2.0) (2024-12-04)
 
 ### Features
