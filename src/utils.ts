@@ -3,11 +3,11 @@ import { readdir } from 'node:fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as glob from '@actions/glob';
-import * as http from '@actions/http-client';
+import { HttpClient } from '@actions/http-client';
 import * as io from '@actions/io';
 import * as tc from '@actions/tool-cache';
-import { generateFileHash } from './crypto';
-import type { VersionConfig } from './versions';
+import { generateFileHash } from './crypto.ts';
+import type { VersionConfig } from './versions.ts';
 
 /**
  * Helper function to determine the runner being used. Uses `systeminfo` to gather version.
@@ -240,7 +240,7 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
     // resolve download url
     let downloadLink: string | null = null;
     if (!config.updateUrl.endsWith('.exe')) {
-        const client = new http.HttpClient();
+        const client = new HttpClient();
         const res = await client.get(config.updateUrl);
         if (res.message.statusCode && res.message.statusCode >= 200 && res.message.statusCode < 300) {
             const body = await res.readBody();

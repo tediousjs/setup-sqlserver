@@ -23,3 +23,4 @@ export function generateFileHash(path: string): Promise<Buffer> {
         });
     });
 }
+

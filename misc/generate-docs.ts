@@ -1,8 +1,12 @@
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as yaml from 'js-yaml';
-import { version } from '../package.json';
+import pkg from '../package.json' with { type: 'json' };
+
+const { version } = pkg;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * From @actions/checkout

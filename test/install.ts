@@ -1,443 +1,295 @@
-import fs from 'node:fs/promises';
-import * as core from '@actions/core';
-import * as tc from '@actions/tool-cache';
-import * as exec from '@actions/exec';
-import { match, restore, SinonStubbedInstance, stub, useFakeTimers } from 'sinon';
-import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
-import * as versions from '../src/versions';
-import * as nativeClient from '../src/install-native-client';
-import * as odbcDriver from '../src/install-odbc';
-import * as utils from '../src/utils';
-import install from '../src/install';
-use(sinonChai);
+import { describe, it, beforeEach, afterEach, mock } from 'node:test';
+import assert from 'node:assert/strict';
+import type { VersionConfig } from '../src/versions.ts';
+
+const core = {
+    info: mock.fn(),
+    debug: mock.fn(),
+    notice: mock.fn(),
+    warning: mock.fn(),
+    setOutput: mock.fn(),
+    startGroup: mock.fn(),
+    endGroup: mock.fn(),
+    group: mock.fn(async (_msg: string, cb: () => unknown) => cb()),
+    isDebug: mock.fn(() => false),
+    platform: { platform: 'win32' as string },
+};
+const exec = { exec: mock.fn(async () => 0) };
+const tc = { find: mock.fn(() => '') };
+const readFile = mock.fn(async () => Buffer.from(''));
+
+const installNativeClient = mock.fn(async () => {});
+const installOdbc = mock.fn(async () => {});
+
+const VERSIONS = new Map<string, VersionConfig>();
+
+const utils = {
+    gatherInputs: mock.fn(),
+    getOsVersion: mock.fn(async () => 2022 as number | null),
+    gatherSummaryFiles: mock.fn(async () => [] as string[]),
+    downloadExeInstaller: mock.fn(async () => 'C:/tmp/exe/setup.exe'),
+    downloadBoxInstaller: mock.fn(async () => 'C:/tmp/box/setup.exe'),
+    downloadSseiInstaller: mock.fn(async () => 'C:/tmp/ssei/setup.exe'),
+    downloadUpdateInstaller: mock.fn(async () => 'C:/tmp/exe/sqlupdate.exe'),
+    waitForDatabase: mock.fn(async () => 0),
+    downloadTool: mock.fn(async () => ''),
+};
+
+mock.module('@actions/core', { namedExports: core });
+mock.module('@actions/exec', { namedExports: exec });
+mock.module('@actions/tool-cache', { namedExports: tc });
+mock.module('node:fs/promises', { namedExports: { readFile } });
+mock.module('../src/versions.ts', { namedExports: { VERSIONS } });
+mock.module('../src/utils.ts', { namedExports: utils });
+mock.module('../src/install-native-client.ts', { defaultExport: installNativeClient });
+mock.module('../src/install-odbc.ts', { defaultExport: installOdbc });
+
+const { default: install } = await import('../src/install.ts');
+
+type Inputs = ReturnType<typeof utils.gatherInputs>;
+
+const defaultInputs = (overrides: Partial<Inputs> = {}): Inputs => ({
+    version: 'box',
+    password: 'secret password',
+    collation: 'SQL_Latin1_General_CP1_CI_AS',
+    installArgs: [],
+    wait: true,
+    skipOsCheck: false,
+    nativeClientVersion: '',
+    odbcVersion: '',
+    installUpdates: false,
+    ...overrides,
+} as Inputs);
+
+function resetAllMocks() {
+    const fns = [
+        core.info, core.debug, core.notice, core.warning, core.setOutput,
+        core.startGroup, core.endGroup, core.group, core.isDebug,
+        exec.exec, tc.find, readFile,
+        installNativeClient, installOdbc,
+        utils.gatherInputs, utils.getOsVersion, utils.gatherSummaryFiles,
+        utils.downloadExeInstaller, utils.downloadBoxInstaller,
+        utils.downloadSseiInstaller, utils.downloadUpdateInstaller,
+        utils.waitForDatabase, utils.downloadTool,
+    ];
+    for (const fn of fns) {
+        fn.mock.resetCalls();
+    }
+}
 
 describe('install', () => {
-    let reverts: (() => void)[] = [];
-    let versionStub: SinonStubbedInstance<Map<string, versions.VersionConfig>>;
-    let coreStub: SinonStubbedInstance<typeof core>;
-    let utilsStub: SinonStubbedInstance<typeof utils>;
-    let tcStub: SinonStubbedInstance<typeof tc>;
-    let execStub: SinonStubbedInstance<typeof exec>;
-    let stubNc: SinonStubbedInstance<typeof nativeClient>;
-    let stubOdbc: SinonStubbedInstance<typeof odbcDriver>;
-    beforeEach('stub deps', () => {
-        stubNc = stub(nativeClient);
-        stubOdbc = stub(odbcDriver);
-        versionStub = stub(versions.VERSIONS);
-        versionStub.keys.returns(['box', 'exe', 'ssei', 'maxOs', 'minOs', 'minMaxOs'][Symbol.iterator]());
-        versionStub.has.callsFake((name) => {
-            return ['box', 'exe', 'ssei', 'maxOs', 'minOs', 'minMaxOs'].includes(name);
-        });
-        versionStub.get.withArgs('box').returns({
+    beforeEach(() => {
+        resetAllMocks();
+        core.isDebug.mock.mockImplementation(() => false);
+        core.group.mock.mockImplementation(async (_msg: string, cb: () => unknown) => cb());
+        core.platform.platform = 'win32';
+        exec.exec.mock.mockImplementation(async () => 0);
+        tc.find.mock.mockImplementation(() => '');
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs());
+        utils.getOsVersion.mock.mockImplementation(async () => 2022);
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => []);
+        utils.downloadExeInstaller.mock.mockImplementation(async () => 'C:/tmp/exe/setup.exe');
+        utils.downloadBoxInstaller.mock.mockImplementation(async () => 'C:/tmp/box/setup.exe');
+        utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:/tmp/ssei/setup.exe');
+        utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:/tmp/exe/sqlupdate.exe');
+        utils.waitForDatabase.mock.mockImplementation(async () => 0);
+
+        VERSIONS.clear();
+        VERSIONS.set('box', {
             version: '2022',
             exeUrl: 'https://example.com/installer.exe',
             boxUrl: 'https://example.com/installer.box',
             updateUrl: 'https://example.com/update.html',
         });
-        versionStub.get.withArgs('exe').returns({
+        VERSIONS.set('exe', {
             version: '2019',
             exeUrl: 'https://example.com/setup.exe',
             updateUrl: 'https://example.com/update.exe',
         });
-        versionStub.get.withArgs('ssei').returns({
+        VERSIONS.set('ssei', {
             version: '2025',
             sseiUrl: 'https://example.com/ssei.exe',
             updateUrl: 'https://example.com/update.html',
         });
-        versionStub.get.withArgs('maxOs').returns({
+        VERSIONS.set('maxOs', {
             version: '2017',
             exeUrl: 'https://example.com/setup.exe',
-            osSupport: {
-                max: 2019,
-            },
+            osSupport: { max: 2019 },
         });
-        versionStub.get.withArgs('minOs').returns({
+        VERSIONS.set('minOs', {
             version: '2017',
             exeUrl: 'https://example.com/setup.exe',
-            osSupport: {
-                min: 2022,
-            },
+            osSupport: { min: 2022 },
         });
-        versionStub.get.withArgs('minMaxOs').returns({
+        VERSIONS.set('minMaxOs', {
             version: '2017',
             exeUrl: 'https://example.com/setup.exe',
-            osSupport: {
-                min: 2019,
-                max: 2022,
-            },
+            osSupport: { min: 2019, max: 2022 },
         });
-        utilsStub = stub(utils);
-        utilsStub.gatherInputs.returns({
-            version: 'box',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
-        utilsStub.getOsVersion.resolves(2022);
-        utilsStub.gatherSummaryFiles.resolves([]);
-        utilsStub.downloadExeInstaller.resolves('C:/tmp/exe/setup.exe');
-        utilsStub.downloadBoxInstaller.resolves('C:/tmp/box/setup.exe');
-        utilsStub.downloadSseiInstaller.resolves('C:/tmp/ssei/setup.exe');
-        utilsStub.downloadUpdateInstaller.resolves('C:/tmp/exe/sqlupdate.exe');
-        utilsStub.waitForDatabase.resolves(0);
-        coreStub = stub(core);
-        coreStub.group.callsFake((message, cb) => {
-            return cb();
-        });
-        stub(coreStub, 'platform').value({
-            platform: 'win32',
-        });
-        tcStub = stub(tc);
-        tcStub.find.returns('');
-        execStub = stub(exec);
-        execStub.exec.resolves();
     });
-    afterEach('revert stubs', () => {
-        restore();
-        reverts.forEach((revert) => revert());
-        reverts = [];
+    afterEach(() => {
     });
+
     it('fails if bad os', async () => {
-        stub(coreStub, 'platform').value({
-            platform: 'linux',
+        core.platform.platform = 'linux';
+        await assert.rejects(() => install(), {
+            message: 'setup-sqlserver only supports Windows runners, got: linux',
         });
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'setup-sqlserver only supports Windows runners, got: linux');
-            return;
-        }
-        expect.fail('expected to throw');
     });
     it('fails if bad sql version', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'missing',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'missing' }));
+        await assert.rejects(() => install(), {
+            message: 'Unsupported SQL Version, supported versions are box, exe, ssei, maxOs, minOs, minMaxOs, got: missing',
         });
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'Unsupported SQL Version, supported versions are box, exe, ssei, maxOs, minOs, minMaxOs, got: missing');
-            return;
-        }
-        expect.fail('expected to throw');
     });
     it('runs a box install', async () => {
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/box/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        const call = exec.exec.mock.calls[0];
+        assert.equal(call.arguments[0], '"C:/tmp/box/setup.exe"');
+        assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true });
     });
     it('runs an exe install', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'exe',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe' }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/exe/setup.exe"');
     });
     it('runs an ssei install', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'ssei',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'ssei' }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/ssei/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/ssei/setup.exe"');
     });
     it('downloads cumulative updates', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'exe',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: true,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe', installUpdates: true }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
-        expect(execStub.exec.firstCall.args[1]).to.contain.members([
-            '/UPDATEENABLED=1',
-            '/UpdateSource=C:/tmp/exe',
-        ]);
+        const args = exec.exec.mock.calls[0].arguments[1] as string[];
+        assert.ok(args.includes('/UPDATEENABLED=1'));
+        assert.ok(args.includes('/UpdateSource=C:/tmp/exe'));
     });
     it('uses cached updates if found', async () => {
-        tcStub.find.withArgs('sqlupdate').returns('C:/tool-cache/sql-update');
-        utilsStub.gatherInputs.returns({
-            version: 'exe',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: true,
-        });
+        tc.find.mock.mockImplementation((tool: string) => tool === 'sqlupdate' ? 'C:/tool-cache/sql-update' : '');
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe', installUpdates: true }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
-        expect(execStub.exec.firstCall.args[1]).to.contain.members([
-            '/UPDATEENABLED=1',
-            '/UpdateSource=C:/tool-cache/sql-update',
-        ]);
+        const args = exec.exec.mock.calls[0].arguments[1] as string[];
+        assert.ok(args.includes('/UPDATEENABLED=1'));
+        assert.ok(args.includes('/UpdateSource=C:/tool-cache/sql-update'));
     });
     it('skips cumulative updates if no update url', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'minOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: true,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minOs', installUpdates: true }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
-        expect(execStub.exec.firstCall.args[1]).to.not.contain.members([
-            '/UPDATEENABLED=1',
-            '/UpdateSource=C:/tmp/exe',
-        ]);
+        const args = exec.exec.mock.calls[0].arguments[1] as string[];
+        assert.ok(!args.includes('/UPDATEENABLED=1'));
     });
     it('uses cached tool if found', async () => {
-        tcStub.find.withArgs('sqlserver').returns('C:/tool-cache/sql-server');
+        tc.find.mock.mockImplementation((tool: string) => tool === 'sqlserver' ? 'C:/tool-cache/sql-server' : '');
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tool-cache/sql-server/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tool-cache/sql-server/setup.exe"');
     });
     it('errors on os max support', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'maxOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs' }));
+        await assert.rejects(() => install(), {
+            message: 'Runner version windows-2022 is not supported for SQL Server maxOs. Please use windows-2019.',
         });
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'Runner version windows-2022 is not supported for SQL Server maxOs. Please use windows-2019.');
-            return;
-        }
-        expect.fail('expected to throw');
     });
     it('errors on os min support', async () => {
-        utilsStub.getOsVersion.resolves(2019);
-        utilsStub.gatherInputs.returns({
-            version: 'minOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
+        utils.getOsVersion.mock.mockImplementation(async () => 2019);
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minOs' }));
+        await assert.rejects(() => install(), {
+            message: 'Runner version windows-2019 is not supported for SQL Server minOs. Please use windows-2022.',
         });
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'Runner version windows-2019 is not supported for SQL Server minOs. Please use windows-2022.');
-            return;
-        }
-        expect.fail('expected to throw');
     });
     it('errors on os min & max support', async () => {
-        utilsStub.getOsVersion.resolves(2016);
-        utilsStub.gatherInputs.returns({
-            version: 'minMaxOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
+        utils.getOsVersion.mock.mockImplementation(async () => 2016);
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minMaxOs' }));
+        await assert.rejects(() => install(), {
+            message: 'Runner version windows-2016 is not supported for SQL Server minMaxOs. Please use windows-2019 to windows-2022.',
         });
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'Runner version windows-2016 is not supported for SQL Server minMaxOs. Please use windows-2019 to windows-2022.');
-            return;
-        }
-        expect.fail('expected to throw');
     });
     it('continues if no os version found', async () => {
-        utilsStub.getOsVersion.resolves(null);
-        utilsStub.gatherInputs.returns({
-            version: 'maxOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.getOsVersion.mock.mockImplementation(async () => null);
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs' }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/exe/setup.exe"');
     });
     it('continues if os version is good', async () => {
-        utilsStub.getOsVersion.resolves(2019);
-        utilsStub.gatherInputs.returns({
-            version: 'maxOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.getOsVersion.mock.mockImplementation(async () => 2019);
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs' }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/exe/setup.exe"');
     });
     it('skips os checks when needed', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'maxOs',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: true,
-            skipOsCheck: true,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs', skipOsCheck: true }));
         await install();
-        expect(execStub.exec).to.have.been.calledWith('"C:/tmp/exe/setup.exe"', match.array, { windowsVerbatimArguments: true });
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/exe/setup.exe"');
     });
     it('waits for max of 10 attempts', async () => {
-        const clock = useFakeTimers();
-        stub(clock, 'setTimeout').yields();
-        utilsStub.waitForDatabase.resolves(1);
-        await install();
-        expect(utilsStub.waitForDatabase).to.have.callCount(6);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 1000);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 2000);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 4000);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 8000);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 16000);
+        const original = globalThis.setTimeout;
+        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
+        try {
+            utils.waitForDatabase.mock.mockImplementation(async () => 1);
+            await install();
+        } finally {
+            globalThis.setTimeout = original;
+        }
+        assert.equal(utils.waitForDatabase.mock.callCount(), 6);
     });
     it('waits until db is ready', async () => {
-        const clock = useFakeTimers();
-        stub(clock, 'setTimeout').yields();
-        utilsStub.waitForDatabase.resolves(1);
-        utilsStub.waitForDatabase.onThirdCall().resolves(0);
-        await install();
-        expect(utilsStub.waitForDatabase).to.have.callCount(3);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 1000);
-        expect(clock.setTimeout).to.have.been.calledWith(match.any, 2000);
+        const original = globalThis.setTimeout;
+        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
+        try {
+            let call = 0;
+            utils.waitForDatabase.mock.mockImplementation(async () => {
+                call++;
+                return call >= 3 ? 0 : 1;
+            });
+            await install();
+        } finally {
+            globalThis.setTimeout = original;
+        }
+        assert.equal(utils.waitForDatabase.mock.callCount(), 3);
     });
     it('fetches summary files', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'box',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: false,
-            skipOsCheck: false,
-            nativeClientVersion: '',
-            odbcVersion: '',
-            installUpdates: false,
-        });
-        const stubReadfile = stub(fs, 'readFile');
-        stubReadfile.resolves(Buffer.from('test data'));
-        utilsStub.gatherSummaryFiles.resolves(['C:/tmp/summary.txt']);
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
+        readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt']);
         await install();
-        expect(coreStub.startGroup).calledOnceWith('summary.txt');
-        expect(coreStub.info).calledWith('test data');
-        expect(coreStub.endGroup).has.callCount(1);
+        assert.equal(core.startGroup.mock.callCount(), 1);
+        assert.equal(core.startGroup.mock.calls[0].arguments[0], 'summary.txt');
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'test data'));
+        assert.equal(core.endGroup.mock.callCount(), 1);
     });
     it('fetches summary files with details on errors', async () => {
-        const stubReadfile = stub(fs, 'readFile');
-        stubReadfile.resolves(Buffer.from('test data'));
-        utilsStub.gatherSummaryFiles.resolves(['C:/tmp/summary.txt']);
-        execStub.exec.rejects(new Error('synthetic error'));
-        try {
-            await install();
-        } catch (e) {
-            expect(e).to.have.property('message', 'synthetic error');
-            expect(utilsStub.gatherSummaryFiles).to.have.been.calledOnceWith(true);
-            expect(coreStub.startGroup).calledOnceWith('summary.txt');
-            expect(coreStub.info).calledOnceWith('test data');
-            expect(coreStub.endGroup).has.callCount(1);
-            return;
-        }
-        expect.fail('expected to throw');
+        readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt']);
+        exec.exec.mock.mockImplementation(async () => { throw new Error('synthetic error'); });
+        await assert.rejects(() => install(), { message: 'synthetic error' });
+        assert.equal(utils.gatherSummaryFiles.mock.callCount(), 1);
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
+        assert.equal(core.startGroup.mock.callCount(), 1);
+        assert.equal(core.startGroup.mock.calls[0].arguments[0], 'summary.txt');
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'test data'));
+        assert.equal(core.endGroup.mock.callCount(), 1);
     });
     it('fetches summary detail files during debug', async () => {
-        const stubReadfile = stub(fs, 'readFile');
-        stubReadfile.resolves(Buffer.from('test data'));
-        utilsStub.gatherSummaryFiles.resolves(['C:/tmp/summary.txt']);
-        coreStub.isDebug.returns(true);
+        readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt']);
+        core.isDebug.mock.mockImplementation(() => true);
         await install();
-        expect(utilsStub.gatherSummaryFiles).to.have.been.calledOnceWith(true);
-        expect(coreStub.info).calledWith('test data');
+        assert.equal(utils.gatherSummaryFiles.mock.callCount(), 1);
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'test data'));
     });
     it('installs native client if needed', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'box',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: false,
-            skipOsCheck: false,
-            nativeClientVersion: '11',
-            odbcVersion: '',
-            installUpdates: false,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false, nativeClientVersion: '11' }));
         await install();
-        expect(stubNc.default).to.have.been.calledOnceWith('11');
+        assert.equal(installNativeClient.mock.callCount(), 1);
+        assert.equal(installNativeClient.mock.calls[0].arguments[0], '11');
     });
     it('installs odbc driver if needed', async () => {
-        utilsStub.gatherInputs.returns({
-            version: 'box',
-            password: 'secret password',
-            collation: 'SQL_Latin1_General_CP1_CI_AS',
-            installArgs: [],
-            wait: false,
-            skipOsCheck: false,
-            nativeClientVersion: '11',
-            odbcVersion: '18',
-            installUpdates: false,
-        });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false, nativeClientVersion: '11', odbcVersion: '18' }));
         await install();
-        expect(stubNc.default).to.have.been.calledOnceWith('11');
-        expect(stubOdbc.default).to.have.been.calledOnceWith('18');
+        assert.equal(installNativeClient.mock.callCount(), 1);
+        assert.equal(installNativeClient.mock.calls[0].arguments[0], '11');
+        assert.equal(installOdbc.mock.callCount(), 1);
+        assert.equal(installOdbc.mock.calls[0].arguments[0], '18');
     });
 });

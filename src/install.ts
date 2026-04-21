@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as tc from '@actions/tool-cache';
-import { type VersionConfig, VERSIONS } from './versions';
+import { type VersionConfig, VERSIONS } from './versions.ts';
 import {
     downloadBoxInstaller,
     downloadExeInstaller,
@@ -13,9 +13,9 @@ import {
     gatherSummaryFiles,
     getOsVersion,
     waitForDatabase,
-} from './utils';
-import installNativeClient from './install-native-client';
-import installOdbc from './install-odbc';
+} from './utils.ts';
+import installNativeClient from './install-native-client.ts';
+import installOdbc from './install-odbc.ts';
 
 /**
  * Attempt to load the installer from the tool-cache, otherwise, fetch it.

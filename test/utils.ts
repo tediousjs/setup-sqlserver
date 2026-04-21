@@ -1,33 +1,91 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
-import { IncomingMessage } from 'node:http';
-import * as exec from '@actions/exec';
-import * as core from '@actions/core';
-import * as tc from '@actions/tool-cache';
-import * as io from '@actions/io';
-import * as glob from '@actions/glob';
-import * as http from '@actions/http-client';
-import { Globber } from '@actions/glob';
-import { stub, restore, match, SinonStubbedMember, SinonStubbedInstance, SinonStub, createStubInstance } from 'sinon';
-import { expect, use } from 'chai';
-import sinonChai from 'sinon-chai';
-import * as utils from '../src/utils';
-import * as crypto from '../src/crypto';
-use(sinonChai);
+import { describe, it, beforeEach, mock } from 'node:test';
+import assert from 'node:assert/strict';
+
+const core = {
+    getInput: mock.fn(() => ''),
+    getMultilineInput: mock.fn(() => [] as string[]),
+    getBooleanInput: mock.fn(() => false),
+    info: mock.fn(),
+    debug: mock.fn(),
+    warning: mock.fn(),
+    notice: mock.fn(),
+    startGroup: mock.fn(),
+    endGroup: mock.fn(),
+    isDebug: mock.fn(() => false),
+    platform: {
+        getDetails: mock.fn(),
+    },
+};
+const exec = { exec: mock.fn(async () => 0) };
+const tc = {
+    downloadTool: mock.fn(async () => `C:/tmp/${randomUUID()}`),
+    cacheFile: mock.fn(async () => `C:/tools/${randomUUID()}`),
+    cacheDir: mock.fn(async () => `C:/tools/${randomUUID()}`),
+};
+const io = { mv: mock.fn(async () => {}) };
+const globCreate = mock.fn(async () => ({ glob: async () => [] as string[] }));
+const glob = { create: globCreate };
+
+const httpGet = mock.fn(async () => httpResponse);
+const httpResponse = {
+    message: { statusCode: 200 },
+    readBody: mock.fn(async () => ''),
+};
+class HttpClient {
+    get = httpGet;
+}
+const http = { HttpClient };
+
+const readdir = mock.fn(async () => [] as string[]);
+const generateFileHash = mock.fn(async () => randomBytes(32));
+
+mock.module('@actions/core', { namedExports: core });
+mock.module('@actions/exec', { namedExports: exec });
+mock.module('@actions/tool-cache', { namedExports: tc });
+mock.module('@actions/io', { namedExports: io });
+mock.module('@actions/glob', { namedExports: glob });
+mock.module('@actions/http-client', { namedExports: http });
+mock.module('node:fs/promises', { namedExports: { readdir } });
+mock.module('../src/crypto.ts', { namedExports: { generateFileHash } });
+
+const utils = await import('../src/utils.ts');
+
+function resetAll() {
+    const fns = [
+        core.getInput, core.getMultilineInput, core.getBooleanInput,
+        core.info, core.debug, core.warning, core.notice,
+        core.startGroup, core.endGroup, core.isDebug, core.platform.getDetails,
+        exec.exec,
+        tc.downloadTool, tc.cacheFile, tc.cacheDir,
+        io.mv, globCreate, httpGet, httpResponse.readBody,
+        readdir, generateFileHash,
+    ];
+    for (const fn of fns) fn.mock.resetCalls();
+    core.getInput.mock.mockImplementation(() => '');
+    core.getMultilineInput.mock.mockImplementation(() => []);
+    core.getBooleanInput.mock.mockImplementation(() => false);
+    core.isDebug.mock.mockImplementation(() => false);
+    exec.exec.mock.mockImplementation(async () => 0);
+    tc.downloadTool.mock.mockImplementation(async () => `C:/tmp/${randomUUID()}`);
+    tc.cacheFile.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
+    tc.cacheDir.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
+    io.mv.mock.mockImplementation(async () => {});
+    globCreate.mock.mockImplementation(async () => ({ glob: async () => [] }));
+    httpResponse.message = { statusCode: 200 };
+    httpResponse.readBody.mock.mockImplementation(async () => '');
+    httpGet.mock.mockImplementation(async () => httpResponse);
+    readdir.mock.mockImplementation(async () => []);
+    generateFileHash.mock.mockImplementation(async () => randomBytes(32));
+}
 
 describe('utils', () => {
-    let coreStub: SinonStubbedInstance<typeof core>;
-    let platformStub: SinonStubbedInstance<typeof core.platform>;
-    beforeEach('stub core', () => {
-        platformStub = stub(core.platform);
-        coreStub = stub(core);
-    });
-    afterEach('restore stubs', () => {
-        restore();
+    beforeEach(() => {
+        resetAll();
     });
     describe('.getOsVersion()', () => {
-        beforeEach('stub debs', () => {
-            platformStub.getDetails.resolves({
+        beforeEach(() => {
+            core.platform.getDetails.mock.mockImplementation(async () => ({
                 name: 'Microsoft Windows Server 2019 Datacenter',
                 platform: 'win32',
                 arch: 'x64',
@@ -35,14 +93,14 @@ describe('utils', () => {
                 isWindows: true,
                 isMacOS: false,
                 isLinux: false,
-            });
+            }));
         });
         it('correctly returns for windows-2019', async () => {
             const out = await utils.getOsVersion();
-            expect(out).to.equal(2019);
+            assert.equal(out, 2019);
         });
         it('correctly returns for windows-2022', async () => {
-            platformStub.getDetails.resolves({
+            core.platform.getDetails.mock.mockImplementation(async () => ({
                 name: 'Microsoft Windows Server 2022 Datacenter',
                 platform: 'win32',
                 arch: 'x64',
@@ -50,27 +108,30 @@ describe('utils', () => {
                 isWindows: true,
                 isMacOS: false,
                 isLinux: false,
-            });
+            }));
             const out = await utils.getOsVersion();
-            expect(out).to.equal(2022);
+            assert.equal(out, 2022);
         });
         it('adds output when debugging', async () => {
-            coreStub.isDebug.returns(true);
+            core.isDebug.mock.mockImplementation(() => true);
             await utils.getOsVersion();
-            expect(coreStub.isDebug).to.have.callCount(1);
-            expect(coreStub.startGroup).to.have.been.calledOnceWith('systeminfo');
-            expect(coreStub.debug).to.have.been.calledOnceWith("name: Microsoft Windows Server 2019 Datacenter\nplatform: win32\narch: x64\nversion: 10.0.17763\nisWindows: true\nisMacOS: false\nisLinux: false");
-            expect(coreStub.endGroup).to.have.callCount(1);
+            assert.equal(core.isDebug.mock.callCount(), 1);
+            assert.equal(core.startGroup.mock.callCount(), 1);
+            assert.equal(core.startGroup.mock.calls[0].arguments[0], 'systeminfo');
+            assert.equal(core.debug.mock.callCount(), 1);
+            assert.equal(core.debug.mock.calls[0].arguments[0], 'name: Microsoft Windows Server 2019 Datacenter\nplatform: win32\narch: x64\nversion: 10.0.17763\nisWindows: true\nisMacOS: false\nisLinux: false');
+            assert.equal(core.endGroup.mock.callCount(), 1);
         });
         it('fails gracefully when error is thrown', async () => {
             const err = new Error('synthetic error');
-            platformStub.getDetails.rejects(err);
+            core.platform.getDetails.mock.mockImplementation(async () => { throw err; });
             const res = await utils.getOsVersion();
-            expect(res).to.equal(null);
-            expect(coreStub.warning).to.have.been.calledOnceWithExactly(err);
+            assert.equal(res, null);
+            assert.equal(core.warning.mock.callCount(), 1);
+            assert.equal(core.warning.mock.calls[0].arguments[0], err);
         });
         it('fails gracefully with bad output', async () => {
-            platformStub.getDetails.resolves({
+            core.platform.getDetails.mock.mockImplementation(async () => ({
                 name: 'not a number',
                 platform: 'win32',
                 arch: 'x64',
@@ -78,24 +139,29 @@ describe('utils', () => {
                 isWindows: true,
                 isMacOS: false,
                 isLinux: false,
-            });
+            }));
             const res = await utils.getOsVersion();
-            expect(res).to.equal(null);
+            assert.equal(res, null);
         });
     });
     describe('.gatherInputs()', () => {
+        function setupInputs(overrides: Record<string, string> = {}) {
+            const inputs: Record<string, string> = {
+                'sqlserver-version': '',
+                'sa-password': 'secret password',
+                'db-collation': 'SQL_Latin1_General_CP1_CI_AS',
+                'native-client-version': '',
+                'odbc-version': '',
+                ...overrides,
+            };
+            core.getInput.mock.mockImplementation((name: string) => inputs[name] ?? '');
+            core.getMultilineInput.mock.mockImplementation(() => []);
+            core.getBooleanInput.mock.mockImplementation((name: string) => name === 'wait-for-ready');
+        }
         it('constructs input object', () => {
-            coreStub.getInput.withArgs('sqlserver-version').returns('sql-2022');
-            coreStub.getInput.withArgs('sa-password').returns('secret password');
-            coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
-            coreStub.getInput.withArgs('native-client-version').returns('');
-            coreStub.getInput.withArgs('odbc-version').returns('');
-            coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
-            coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
-            coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
-            coreStub.getBooleanInput.withArgs('install-updates').returns(false);
+            setupInputs({ 'sqlserver-version': 'sql-2022' });
             const res = utils.gatherInputs();
-            expect(res).to.deep.equal({
+            assert.deepEqual(res, {
                 version: '2022',
                 password: 'secret password',
                 collation: 'SQL_Latin1_General_CP1_CI_AS',
@@ -108,268 +174,146 @@ describe('utils', () => {
             });
         });
         it('constructs input object with no sql- prefix', () => {
-            coreStub.getInput.withArgs('sqlserver-version').returns('2022');
-            coreStub.getInput.withArgs('sa-password').returns('secret password');
-            coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
-            coreStub.getInput.withArgs('native-client-version').returns('');
-            coreStub.getInput.withArgs('odbc-version').returns('');
-            coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
-            coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
-            coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
-            coreStub.getBooleanInput.withArgs('install-updates').returns(false);
+            setupInputs({ 'sqlserver-version': '2022' });
             const res = utils.gatherInputs();
-            expect(res).to.deep.equal({
-                version: '2022',
-                password: 'secret password',
-                collation: 'SQL_Latin1_General_CP1_CI_AS',
-                installArgs: [],
-                wait: true,
-                skipOsCheck: false,
-                nativeClientVersion: '',
-                odbcVersion: '',
-                installUpdates: false,
-            });
+            assert.equal(res.version, '2022');
         });
         it('constructs input object with "latest" version', () => {
-            coreStub.getInput.withArgs('sqlserver-version').returns('latest');
-            coreStub.getInput.withArgs('sa-password').returns('secret password');
-            coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
-            coreStub.getInput.withArgs('native-client-version').returns('');
-            coreStub.getInput.withArgs('odbc-version').returns('');
-            coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
-            coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
-            coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
-            coreStub.getBooleanInput.withArgs('install-updates').returns(false);
+            setupInputs({ 'sqlserver-version': 'latest' });
             const res = utils.gatherInputs();
-            expect(res).to.deep.equal({
-                version: '2025',
-                password: 'secret password',
-                collation: 'SQL_Latin1_General_CP1_CI_AS',
-                installArgs: [],
-                wait: true,
-                skipOsCheck: false,
-                nativeClientVersion: '',
-                odbcVersion: '',
-                installUpdates: false,
-            });
+            assert.equal(res.version, '2025');
         });
         it('constructs input object with default version', () => {
-            coreStub.getInput.withArgs('sqlserver-version').returns('');
-            coreStub.getInput.withArgs('sa-password').returns('secret password');
-            coreStub.getInput.withArgs('db-collation').returns('SQL_Latin1_General_CP1_CI_AS');
-            coreStub.getInput.withArgs('native-client-version').returns('');
-            coreStub.getInput.withArgs('odbc-version').returns('');
-            coreStub.getMultilineInput.withArgs('install-arguments').returns([]);
-            coreStub.getBooleanInput.withArgs('wait-for-ready').returns(true);
-            coreStub.getBooleanInput.withArgs('skip-os-check').returns(false);
-            coreStub.getBooleanInput.withArgs('install-updates').returns(false);
+            setupInputs({ 'sqlserver-version': '' });
             const res = utils.gatherInputs();
-            expect(res).to.deep.equal({
-                version: '2025',
-                password: 'secret password',
-                collation: 'SQL_Latin1_General_CP1_CI_AS',
-                installArgs: [],
-                wait: true,
-                skipOsCheck: false,
-                nativeClientVersion: '',
-                odbcVersion: '',
-                installUpdates: false,
-            });
+            assert.equal(res.version, '2025');
         });
     });
     describe('.downloadTool()', () => {
-        let downloadStub: SinonStubbedMember<typeof tc.downloadTool>;
-        beforeEach('stub deps', () => {
-            downloadStub = stub(tc, 'downloadTool');
-            stub(io, 'mv').resolves();
-        });
         it('downloads the tool', async () => {
             const fileName = randomUUID();
-            downloadStub.withArgs('https://example.com/setup.exe').resolves(`C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
             const res = await utils.downloadTool('https://example.com/setup.exe');
-            expect(res).to.equal(`C:/path/to/${fileName}.exe`);
+            assert.equal(res, `C:/path/to/${fileName}.exe`);
         });
         it('downloads the tool with custom extension', async () => {
             const fileName = randomUUID();
-            downloadStub.withArgs('https://example.com/setup.exe').resolves(`C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
             const res = await utils.downloadTool('https://example.com/setup.exe', '.html');
-            expect(res).to.equal(`C:/path/to/${fileName}.html`);
+            assert.equal(res, `C:/path/to/${fileName}.html`);
         });
     });
     describe('.waitForDatabase()', () => {
-        beforeEach('stub deps', () => {
-            stub(exec, 'exec').resolves(0);
-        });
         it('resolves', async () => {
             const res = await utils.waitForDatabase('password');
-            expect(res).to.equal(0);
+            assert.equal(res, 0);
         });
         it('passes a login timeout to sqlcmd', async () => {
             await utils.waitForDatabase('password');
-            expect(exec.exec).to.have.been.calledWith(
-                'sqlcmd',
-                match.array.contains(['-l', '5']),
-                match.any,
-            );
+            assert.equal(exec.exec.mock.callCount(), 1);
+            const call = exec.exec.mock.calls[0];
+            assert.equal(call.arguments[0], 'sqlcmd');
+            const args = call.arguments[1] as string[];
+            const idx = args.indexOf('-l');
+            assert.ok(idx >= 0 && args[idx + 1] === '5');
         });
     });
     describe('.downloadBoxInstaller()', () => {
-        beforeEach('stub deps', () => {
-            stub(tc, 'downloadTool').callsFake(() => Promise.resolve(`C:/tmp/${randomUUID()}`));
-            stub(exec, 'exec').resolves(0);
-            stub(io, 'mv').resolves();
-            stub(tc, 'cacheDir').callsFake(() => Promise.resolve(`C:/tools/${randomUUID()}`));
-            stub(crypto, 'generateFileHash').callsFake(() => Promise.resolve(randomBytes(32)));
-        });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadBoxInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
             });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
         });
         it('throws if no boxUrl', async () => {
-            try {
-                await utils.downloadBoxInstaller({
-                    exeUrl: 'https://example.com/installer.exe',
-                    version: '2016',
-                });
-            } catch (e) {
-                expect(e).to.have.property('message', 'No boxUrl provided');
-                return;
-            }
-            expect.fail('expected to fail');
+            await assert.rejects(() => utils.downloadBoxInstaller({
+                exeUrl: 'https://example.com/installer.exe',
+                version: '2016',
+            }), { message: 'No boxUrl provided' });
         });
         it('calculates digests in debug mode', async () => {
-            coreStub.isDebug.returns(true);
+            core.isDebug.mock.mockImplementation(() => true);
             const res = await utils.downloadBoxInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
             });
-            const calls = coreStub.debug.getCalls().filter(({ firstArg }) => {
-                return firstArg.startsWith('Got setup file');
-            });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
-            expect(calls).to.have.lengthOf(2);
-            expect(calls[0].firstArg).to.match(/^Got setup file \(exe\) with hash SHA256=/);
-            expect(calls[1].firstArg).to.match(/^Got setup file \(box\) with hash SHA256=/);
+            const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got setup file'));
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.equal(calls.length, 2);
+            assert.match(String(calls[0].arguments[0]), /^Got setup file \(exe\) with hash SHA256=/);
+            assert.match(String(calls[1].arguments[0]), /^Got setup file \(box\) with hash SHA256=/);
         });
     });
     describe('.downloadExeInstaller()', () => {
-        beforeEach('stub deps', () => {
-            stub(tc, 'downloadTool').callsFake(() => Promise.resolve(`C:/tmp/${randomUUID()}`));
-            stub(exec, 'exec').resolves(0);
-            stub(io, 'mv').resolves();
-            stub(tc, 'cacheFile').callsFake(() => Promise.resolve(`C:/tools/${randomUUID()}`));
-            stub(crypto, 'generateFileHash').callsFake(() => Promise.resolve(randomBytes(32)));
-        });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadExeInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
             });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
         });
         it('throws if boxUrl', async () => {
-            try {
-                await utils.downloadExeInstaller({
-                    exeUrl: 'https://example.com/installer.exe',
-                    boxUrl: 'https://example.com/installer.box',
-                    version: '2016',
-                });
-            } catch (e) {
-                expect(e).to.have.property('message', 'Version requires box installer');
-                return;
-            }
-            expect.fail('expected to fail');
+            await assert.rejects(() => utils.downloadExeInstaller({
+                exeUrl: 'https://example.com/installer.exe',
+                boxUrl: 'https://example.com/installer.box',
+                version: '2016',
+            }), { message: 'Version requires box installer' });
         });
         it('calculates digests in debug mode', async () => {
-            coreStub.isDebug.returns(true);
+            core.isDebug.mock.mockImplementation(() => true);
             const res = await utils.downloadExeInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
             });
-            const calls = coreStub.debug.getCalls().filter(({ firstArg }) => {
-                return firstArg.startsWith('Got setup file');
-            });
-            expect(calls).to.have.lengthOf(1);
-            expect(calls[0].firstArg).to.match(/^Got setup file \(exe\) with hash SHA256=/);
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got setup file'));
+            assert.equal(calls.length, 1);
+            assert.match(String(calls[0].arguments[0]), /^Got setup file \(exe\) with hash SHA256=/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
         });
     });
     describe('.downloadSseiInstaller()', () => {
-        beforeEach('stub deps', () => {
-            stub(tc, 'downloadTool').callsFake(() => Promise.resolve(`C:/tmp/${randomUUID()}.exe`));
-            stub(exec, 'exec').resolves(0);
-            stub(io, 'mv').resolves();
-            stub(tc, 'cacheDir').callsFake(() => Promise.resolve(`C:/tools/${randomUUID()}`));
-            stub(crypto, 'generateFileHash').callsFake(() => Promise.resolve(randomBytes(32)));
-            stub(fs, 'readdir').resolves(['ssei-bootstrapper.exe', 'SQLServer2025-x64-ENU.exe'] as unknown as []);
+        beforeEach(() => {
+            tc.downloadTool.mock.mockImplementation(async () => `C:/tmp/${randomUUID()}.exe`);
+            readdir.mock.mockImplementation(async () => ['ssei-bootstrapper.exe', 'SQLServer2025-x64-ENU.exe']);
         });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadSseiInstaller({
                 sseiUrl: 'https://example.com/ssei.exe',
                 version: '2025',
             });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
         });
         it('throws if no sseiUrl', async () => {
-            try {
-                await utils.downloadSseiInstaller({
-                    version: '2025',
-                });
-            } catch (e) {
-                expect(e).to.have.property('message', 'No sseiUrl provided');
-                return;
-            }
-            expect.fail('expected to fail');
+            await assert.rejects(() => utils.downloadSseiInstaller({
+                version: '2025',
+            }), { message: 'No sseiUrl provided' });
         });
         it('throws if no exe found after download', async () => {
-            (fs.readdir as SinonStub).resolves(['readme.txt', 'data.cab'] as unknown as []);
-            try {
-                await utils.downloadSseiInstaller({
-                    sseiUrl: 'https://example.com/ssei.exe',
-                    version: '2025',
-                });
-            } catch (e) {
-                expect(e).to.have.property('message', 'SSEI bootstrapper did not produce an installer exe');
-                return;
-            }
-            expect.fail('expected to fail');
+            readdir.mock.mockImplementation(async () => ['readme.txt', 'data.cab']);
+            await assert.rejects(() => utils.downloadSseiInstaller({
+                sseiUrl: 'https://example.com/ssei.exe',
+                version: '2025',
+            }), { message: 'SSEI bootstrapper did not produce an installer exe' });
         });
         it('calculates digests in debug mode', async () => {
-            coreStub.isDebug.returns(true);
+            core.isDebug.mock.mockImplementation(() => true);
             const res = await utils.downloadSseiInstaller({
                 sseiUrl: 'https://example.com/ssei.exe',
                 version: '2025',
             });
-            const calls = coreStub.debug.getCalls().filter(({ firstArg }) => {
-                return firstArg.startsWith('Got SSEI bootstrapper');
-            });
-            expect(calls).to.have.lengthOf(1);
-            expect(calls[0].firstArg).to.match(/^Got SSEI bootstrapper with hash SHA256=/);
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got SSEI bootstrapper'));
+            assert.equal(calls.length, 1);
+            assert.match(String(calls[0].arguments[0]), /^Got SSEI bootstrapper with hash SHA256=/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
         });
     });
     describe('.downloadUpdateInstaller()', () => {
-        let stubClient: SinonStubbedInstance<http.HttpClient>;
-        let stubResponse: SinonStubbedInstance<http.HttpClientResponse>;
-        beforeEach('stub deps', () => {
-            stub(tc, 'downloadTool').callsFake(() => Promise.resolve(`C:/tmp/${randomUUID()}`));
-            stub(exec, 'exec').resolves(0);
-            stub(io, 'mv').resolves();
-            stub(tc, 'cacheFile').callsFake(() => Promise.resolve(`C:/tools/${randomUUID()}`));
-            stub(crypto, 'generateFileHash').callsFake(() => Promise.resolve(randomBytes(32)));
-            stubResponse = createStubInstance(http.HttpClientResponse, {
-                readBody: stub<[]>().resolves('<a href="https://download.microsoft.com/update.exe">'),
-            });
-            stubResponse.message = { statusCode: 200 } as IncomingMessage;
-            stubClient = createStubInstance(http.HttpClient, {
-                get: stub<[url: string]>().resolves(stubResponse),
-            });
-            stub(http, 'HttpClient').returns(stubClient);
+        beforeEach(() => {
+            httpResponse.message = { statusCode: 200 };
+            httpResponse.readBody.mock.mockImplementation(async () => '<a href="https://download.microsoft.com/update.exe">');
         });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadUpdateInstaller({
@@ -377,34 +321,26 @@ describe('utils', () => {
                 version: '2022',
                 updateUrl: 'https://example.com/where-are-updates.html',
             });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
         });
         it('throws if no update url', async () => {
-            try {
-                await utils.downloadUpdateInstaller({
-                    exeUrl: 'https://example.com/installer.exe',
-                    boxUrl: 'https://example.com/installer.box',
-                    version: '2016',
-                });
-            } catch (e) {
-                expect(e).to.have.property('message', 'No update url provided');
-                return;
-            }
-            expect.fail('expected to fail');
+            await assert.rejects(() => utils.downloadUpdateInstaller({
+                exeUrl: 'https://example.com/installer.exe',
+                boxUrl: 'https://example.com/installer.box',
+                version: '2016',
+            }), { message: 'No update url provided' });
         });
         it('calculates digests in debug mode', async () => {
-            coreStub.isDebug.returns(true);
+            core.isDebug.mock.mockImplementation(() => true);
             const res = await utils.downloadUpdateInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
                 updateUrl: 'https://example.com/where-are-updates.html',
             });
-            const calls = coreStub.debug.getCalls().filter(({ firstArg }) => {
-                return firstArg.startsWith('Got update file');
-            });
-            expect(calls).to.have.lengthOf(1);
-            expect(calls[0].firstArg).to.match(/^Got update file with hash SHA256=/);
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got update file'));
+            assert.equal(calls.length, 1);
+            assert.match(String(calls[0].arguments[0]), /^Got update file with hash SHA256=/);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
         });
         it('uses an .exe url directly', async () => {
             const res = await utils.downloadUpdateInstaller({
@@ -412,52 +348,48 @@ describe('utils', () => {
                 version: '2022',
                 updateUrl: 'https://example.com/sqlupdate.exe',
             });
-            expect(res).to.match(/^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
-            expect(stubClient.get).to.have.callCount(0);
+            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.equal(httpGet.mock.callCount(), 0);
         });
         it('returns empty string if URL is not resolved', async () => {
-            stubResponse.readBody.resolves('<a href="https://example.com/update.exe">');
+            httpResponse.readBody.mock.mockImplementation(async () => '<a href="https://example.com/update.exe">');
             const res = await utils.downloadUpdateInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
                 updateUrl: 'https://example.com/sqlupdate.html',
             });
-            expect(res).to.equal('');
-            expect(stubClient.get).to.have.callCount(1);
+            assert.equal(res, '');
+            assert.equal(httpGet.mock.callCount(), 1);
         });
     });
     describe('.gatherSummaryFiles()', () => {
-        let globStub: SinonStubbedInstance<typeof glob>;
-        let globFunc: SinonStub<[], string[]>;
-        beforeEach('stub deps', () => {
-            globFunc = stub<[], string[]>().resolves([]);
-            globStub = stub(glob);
-            globStub.create.resolves({
-                glob: globFunc,
-            } as unknown as Globber);
+        let globFn: ReturnType<typeof mock.fn>;
+        beforeEach(() => {
+            globFn = mock.fn(async () => [] as string[]);
+            globCreate.mock.mockImplementation(async () => ({ glob: globFn } as any));
         });
         it('returns empty array if no files matched', async () => {
             const res = await utils.gatherSummaryFiles();
-            expect(res).to.deep.equal([]);
+            assert.deepEqual(res, []);
         });
         it('returns found files', async () => {
-            globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
+            globFn.mock.mockImplementationOnce(async () => ['C:/tmp/summary.txt']);
             const res = await utils.gatherSummaryFiles();
-            expect(res).to.deep.equal(['C:/tmp/summary.txt']);
-            expect(glob.create).to.have.callCount(1);
+            assert.deepEqual(res, ['C:/tmp/summary.txt']);
+            assert.equal(globCreate.mock.callCount(), 1);
         });
         it('tries to find details files', async () => {
-            globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
+            globFn.mock.mockImplementationOnce(async () => ['C:/tmp/summary.txt']);
             const res = await utils.gatherSummaryFiles(true);
-            expect(res).to.deep.equal(['C:/tmp/summary.txt']);
-            expect(glob.create).to.have.callCount(2);
+            assert.deepEqual(res, ['C:/tmp/summary.txt']);
+            assert.equal(globCreate.mock.callCount(), 2);
         });
         it('finds detail file', async () => {
-            globFunc.onFirstCall().resolves(['C:/tmp/summary.txt']);
-            globFunc.onSecondCall().resolves(['C:/tmp/2021/details.txt', 'C:/tmp/2022/details.txt']);
+            globFn.mock.mockImplementationOnce(async () => ['C:/tmp/summary.txt'], 0);
+            globFn.mock.mockImplementationOnce(async () => ['C:/tmp/2021/details.txt', 'C:/tmp/2022/details.txt'], 1);
             const res = await utils.gatherSummaryFiles(true);
-            expect(res).to.deep.equal(['C:/tmp/summary.txt', 'C:/tmp/2022/details.txt']);
-            expect(glob.create).to.have.callCount(2);
+            assert.deepEqual(res, ['C:/tmp/summary.txt', 'C:/tmp/2022/details.txt']);
+            assert.equal(globCreate.mock.callCount(), 2);
         });
     });
 });
