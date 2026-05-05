@@ -1,6 +1,6 @@
-import * as core from '@actions/core';
-import install from './install';
+import { setFailed } from '@actions/core';
+import install from './install.ts';
 
 (() => install().catch((e) => {
-    core.setFailed(e as Error);
+    setFailed(e as Error);
 }))();

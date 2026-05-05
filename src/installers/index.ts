@@ -1,1 +1,1 @@
-export * from './msi-installer';
+export * from './msi-installer.ts';
