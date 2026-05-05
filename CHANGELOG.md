@@ -1,5 +1,20 @@
 # Changelog
 
+## [4.0.0](https://github.com/tediousjs/setup-sqlserver/compare/v3.1.1...v4.0.0) (2026-05-05)
+
+### ⚠ BREAKING CHANGES
+
+* The action is now an ESM module and targets Node 24.
+Consumers pinning the action via commit SHA will need to re-pin; consumers
+using `@v3` or later will continue to work unchanged. Local development now
+requires Node 24+ (previously Node 20+).
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+### Features
+
+* rewrite as an ESM module ([ae013a7](https://github.com/tediousjs/setup-sqlserver/commit/ae013a7bbca90a4a31840bcc1e086595681f227f))
+
 ## [3.1.1](https://github.com/tediousjs/setup-sqlserver/compare/v3.1.0...v3.1.1) (2026-04-14)
 
 ### Bug Fixes
