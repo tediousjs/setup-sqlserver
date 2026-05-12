@@ -42,7 +42,7 @@
     "@semantic-release/release-notes-generator": "^14.1.0",
     "@tsconfig/node24": "^24.0.4",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^24.6.0",
+    "@types/node": "^24.12.4",
     "eslint": "^10.3.0",
     "js-yaml": "^4.1.1",
     "rollup": "^4.57.1",
