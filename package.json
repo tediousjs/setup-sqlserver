@@ -43,7 +43,7 @@
     "@tsconfig/node24": "^24.0.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.13.2",
-    "eslint": "^10.6.0",
+    "eslint": "^10.7.0",
     "js-yaml": "^5.2.1",
     "rollup": "^4.62.2",
     "tslib": "^2.8.1",
