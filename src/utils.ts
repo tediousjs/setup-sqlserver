@@ -239,14 +239,7 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
     // resolve download url
     let downloadLink: string | null = null;
     if (!config.updateUrl.endsWith('.exe')) {
-        // Use native fetch - the download page rejects requests made through
-        // @actions/http-client >= 3.0.1 with a 403, regardless of user agent.
-        const res = await fetch(config.updateUrl, {
-            headers: {
-                'accept': 'text/html,application/xhtml+xml',
-                'user-agent': 'tediousjs/setup-sqlserver (+https://github.com/tediousjs/setup-sqlserver)',
-            },
-        });
+        const res = await fetch(config.updateUrl);
         if (res.ok) {
             const body = await res.text();
             const [, link] = body.match(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/) ?? [];
