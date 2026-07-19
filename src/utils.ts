@@ -3,7 +3,6 @@ import { readdir } from 'node:fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as glob from '@actions/glob';
-import { HttpClient } from '@actions/http-client';
 import * as io from '@actions/io';
 import * as tc from '@actions/tool-cache';
 import { generateFileHash } from './crypto.ts';
@@ -240,10 +239,16 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
     // resolve download url
     let downloadLink: string | null = null;
     if (!config.updateUrl.endsWith('.exe')) {
-        const client = new HttpClient();
-        const res = await client.get(config.updateUrl);
-        if (res.message.statusCode && res.message.statusCode >= 200 && res.message.statusCode < 300) {
-            const body = await res.readBody();
+        // Use native fetch - the download page rejects requests made through
+        // @actions/http-client >= 3.0.1 with a 403, regardless of user agent.
+        const res = await fetch(config.updateUrl, {
+            headers: {
+                'accept': 'text/html,application/xhtml+xml',
+                'user-agent': 'tediousjs/setup-sqlserver (+https://github.com/tediousjs/setup-sqlserver)',
+            },
+        });
+        if (res.ok) {
+            const body = await res.text();
             const [, link] = body.match(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/) ?? [];
             if (link) {
                 downloadLink = link;
@@ -254,7 +259,7 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
         }
         if (!downloadLink) {
             core.warning('Unable to download cumulative updates');
-            core.info(`Response code: ${res.message.statusCode}`);
+            core.info(`Response code: ${res.status}`);
             return '';
         }
     }
