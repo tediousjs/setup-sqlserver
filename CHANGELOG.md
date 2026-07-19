@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.0.1](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.0...v4.0.1) (2026-07-19)
+
+### Bug Fixes
+
+* fetch cumulative update pages with native fetch to avoid 403s ([25dfb56](https://github.com/tediousjs/setup-sqlserver/commit/25dfb5665fda0024742c3360d34f51848ba3ef15))
+
 ## [4.0.0](https://github.com/tediousjs/setup-sqlserver/compare/v3.1.1...v4.0.0) (2026-05-05)
 
 ### ⚠ BREAKING CHANGES

@@ -1,6 +1,6 @@
 {
   "name": "@tediousjs/setup-sqlserver",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "A GitHub action for installing SQL Server",
   "main": "lib/main/index.js",
   "type": "module",
