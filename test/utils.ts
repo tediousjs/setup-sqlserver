@@ -27,15 +27,13 @@ const io = { mv: mock.fn(async () => {}) };
 const globCreate = mock.fn(async () => ({ glob: async () => [] as string[] }));
 const glob = { create: globCreate };
 
-const httpGet = mock.fn(async () => httpResponse);
-const httpResponse = {
-    message: { statusCode: 200 },
-    readBody: mock.fn(async () => ''),
+const fetchResponse = {
+    ok: true,
+    status: 200,
+    text: mock.fn(async () => ''),
 };
-class HttpClient {
-    get = httpGet;
-}
-const http = { HttpClient };
+const fetchMock = mock.fn(async () => fetchResponse);
+globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 const readdir = mock.fn(async () => [] as string[]);
 const generateFileHash = mock.fn(async () => randomBytes(32));
@@ -45,7 +43,6 @@ mock.module('@actions/exec', { namedExports: exec });
 mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/io', { namedExports: io });
 mock.module('@actions/glob', { namedExports: glob });
-mock.module('@actions/http-client', { namedExports: http });
 mock.module('node:fs/promises', { namedExports: { readdir } });
 mock.module('../src/crypto.ts', { namedExports: { generateFileHash } });
 
@@ -58,7 +55,7 @@ function resetAll() {
         core.startGroup, core.endGroup, core.isDebug, core.platform.getDetails,
         exec.exec,
         tc.downloadTool, tc.cacheFile, tc.cacheDir,
-        io.mv, globCreate, httpGet, httpResponse.readBody,
+        io.mv, globCreate, fetchMock, fetchResponse.text,
         readdir, generateFileHash,
     ];
     for (const fn of fns) fn.mock.resetCalls();
@@ -72,9 +69,10 @@ function resetAll() {
     tc.cacheDir.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
     io.mv.mock.mockImplementation(async () => {});
     globCreate.mock.mockImplementation(async () => ({ glob: async () => [] }));
-    httpResponse.message = { statusCode: 200 };
-    httpResponse.readBody.mock.mockImplementation(async () => '');
-    httpGet.mock.mockImplementation(async () => httpResponse);
+    fetchResponse.ok = true;
+    fetchResponse.status = 200;
+    fetchResponse.text.mock.mockImplementation(async () => '');
+    fetchMock.mock.mockImplementation(async () => fetchResponse);
     readdir.mock.mockImplementation(async () => []);
     generateFileHash.mock.mockImplementation(async () => randomBytes(32));
 }
@@ -312,8 +310,9 @@ describe('utils', () => {
     });
     describe('.downloadUpdateInstaller()', () => {
         beforeEach(() => {
-            httpResponse.message = { statusCode: 200 };
-            httpResponse.readBody.mock.mockImplementation(async () => '<a href="https://download.microsoft.com/update.exe">');
+            fetchResponse.ok = true;
+            fetchResponse.status = 200;
+            fetchResponse.text.mock.mockImplementation(async () => '<a href="https://download.microsoft.com/update.exe">');
         });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadUpdateInstaller({
@@ -349,17 +348,30 @@ describe('utils', () => {
                 updateUrl: 'https://example.com/sqlupdate.exe',
             });
             assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
-            assert.equal(httpGet.mock.callCount(), 0);
+            assert.equal(fetchMock.mock.callCount(), 0);
         });
         it('returns empty string if URL is not resolved', async () => {
-            httpResponse.readBody.mock.mockImplementation(async () => '<a href="https://example.com/update.exe">');
+            fetchResponse.text.mock.mockImplementation(async () => '<a href="https://example.com/update.exe">');
             const res = await utils.downloadUpdateInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
                 updateUrl: 'https://example.com/sqlupdate.html',
             });
             assert.equal(res, '');
-            assert.equal(httpGet.mock.callCount(), 1);
+            assert.equal(fetchMock.mock.callCount(), 1);
+        });
+        it('returns empty string if the update page request is rejected', async () => {
+            fetchResponse.ok = false;
+            fetchResponse.status = 403;
+            const res = await utils.downloadUpdateInstaller({
+                exeUrl: 'https://example.com/installer.exe',
+                version: '2022',
+                updateUrl: 'https://example.com/sqlupdate.html',
+            });
+            assert.equal(res, '');
+            const calls = core.info.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Response code'));
+            assert.equal(calls.length, 1);
+            assert.equal(String(calls[0].arguments[0]), 'Response code: 403');
         });
     });
     describe('.gatherSummaryFiles()', () => {
