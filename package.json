@@ -44,7 +44,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.13.3",
     "eslint": "^10.9.0",
-    "js-yaml": "^5.3.0",
+    "js-yaml": "^5.4.1",
     "rollup": "^4.62.5",
     "tslib": "^2.8.1",
     "typescript": "^6.0.3",
