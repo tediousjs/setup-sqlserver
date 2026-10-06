@@ -158,6 +158,14 @@ describe('install', () => {
         await install();
         assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tmp/ssei/setup.exe"');
     });
+    it('uses cached SSEI media without running the bootstrapper again', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'ssei' }));
+        tc.find.mock.mockImplementation(() => 'C:/tool-cache/sqlserver/2025');
+        await install();
+        assert.deepEqual(tc.find.mock.calls[0].arguments, ['sqlserver', '2025']);
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:/tool-cache/sqlserver/2025/setup.exe"');
+        assert.equal(utils.downloadSseiInstaller.mock.callCount(), 0);
+    });
     it('downloads cumulative updates', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe', installUpdates: true }));
         await install();

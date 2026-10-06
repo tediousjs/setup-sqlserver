@@ -1,5 +1,5 @@
 import { basename, extname, dirname, join as joinPaths } from 'node:path';
-import { readdir } from 'node:fs/promises';
+import { mkdtemp, readdir } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
@@ -171,24 +171,26 @@ export async function downloadSseiInstaller(config: VersionConfig): Promise<stri
         core.debug(`Got SSEI bootstrapper with hash SHA256=${hash.toString('base64')}`);
     }
     // use the bootstrapper to download the actual media
-    const mediaDir = dirname(sseiPath);
+    const mediaDir = await mkdtemp(joinPaths(dirname(sseiPath), 'sqlserver-media-'));
     core.info('Downloading install media via SSEI bootstrapper');
     await exec.exec(`"${sseiPath}"`, [
         '/Action=Download',
-        `/MediaPath=${mediaDir}`,
+        `/MediaPath="${mediaDir}"`,
         '/MediaType=CAB',
         '/Quiet',
         '/Language=en-US',
     ], {
         windowsVerbatimArguments: true,
     });
-    // find the downloaded exe in the media directory
     const files = await readdir(mediaDir);
-    const exeFile = files.find((f) => f.endsWith('.exe') && f !== basename(sseiPath));
-    if (!exeFile) {
+    const exeFiles = files.filter((file) => file.toLowerCase().endsWith('.exe'));
+    if (exeFiles.length === 0) {
         throw new Error('SSEI bootstrapper did not produce an installer exe');
     }
-    const exePath = joinPaths(mediaDir, exeFile);
+    if (exeFiles.length > 1) {
+        throw new Error(`SSEI bootstrapper produced multiple installer exes: ${exeFiles.join(', ')}`);
+    }
+    const exePath = joinPaths(mediaDir, exeFiles[0]);
     core.info('Extracting installer');
     await exec.exec(`"${exePath}"`, [
         '/qs',
