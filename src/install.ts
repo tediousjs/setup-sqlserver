@@ -2,7 +2,7 @@ import { basename, dirname, join as joinPaths } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
-import * as tc from '@actions/tool-cache';
+import { findCachedTool } from './tool-cache.ts';
 import { type VersionConfig, VERSIONS } from './versions.ts';
 import {
     downloadBoxInstaller,
@@ -24,7 +24,7 @@ import installOdbc from './install-odbc.ts';
  * @returns {string} The path to the installer
  */
 function findOrDownloadTool(config: VersionConfig): Promise<string> {
-    const toolPath = tc.find('sqlserver', config.version);
+    const toolPath = findCachedTool('sqlserver', config.version);
     if (toolPath) {
         core.info(`Found in cache @ ${toolPath}`);
         return Promise.resolve(joinPaths(toolPath, 'setup.exe'));
@@ -37,7 +37,7 @@ function findOrDownloadTool(config: VersionConfig): Promise<string> {
 }
 
 function findOrDownloadUpdates(config: VersionConfig): Promise<string> {
-    const toolPath = tc.find('sqlupdate', config.version);
+    const toolPath = findCachedTool('sqlupdate', config.version);
     if (toolPath) {
         core.info(`Found in cache @ ${toolPath}`);
         return Promise.resolve(joinPaths(toolPath, 'sqlupdate.exe'));
