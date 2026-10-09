@@ -103,7 +103,15 @@ export default async function install() {
         if (!config.updateUrl) {
             core.info('Skipping update installation - version not supported');
         } else {
-            const updatePath = await core.group(`Fetching cumulative updates for ${version}`, () => findOrDownloadUpdates(config));
+            const updatePath = await core.group(`Fetching cumulative updates for ${version}`, async () => {
+                try {
+                    return await findOrDownloadUpdates(config);
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    core.warning(`Unable to download cumulative updates; installing without updates. ${reason}`);
+                    return '';
+                }
+            });
             if (updatePath) {
                 installArgs.push('/UPDATEENABLED=1', `/UpdateSource=${dirname(updatePath)}`);
             }

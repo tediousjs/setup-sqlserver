@@ -37,6 +37,7 @@ globalThis.fetch = fetchMock as unknown as typeof fetch;
 
 const readdir = mock.fn(async () => [] as string[]);
 const generateFileHash = mock.fn(async () => randomBytes(32));
+const delay = mock.fn(async (milliseconds: number) => { assert.ok(milliseconds > 0); });
 
 mock.module('@actions/core', { namedExports: core });
 mock.module('@actions/exec', { namedExports: exec });
@@ -44,6 +45,7 @@ mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/io', { namedExports: io });
 mock.module('@actions/glob', { namedExports: glob });
 mock.module('node:fs/promises', { namedExports: { readdir } });
+mock.module('node:timers/promises', { namedExports: { setTimeout: delay } });
 mock.module('../src/crypto.ts', { namedExports: { generateFileHash } });
 
 const utils = await import('../src/utils.ts');
@@ -56,7 +58,7 @@ function resetAll() {
         exec.exec,
         tc.downloadTool, tc.cacheFile, tc.cacheDir,
         io.mv, globCreate, fetchMock, fetchResponse.text,
-        readdir, generateFileHash,
+        readdir, generateFileHash, delay,
     ];
     for (const fn of fns) fn.mock.resetCalls();
     core.getInput.mock.mockImplementation(() => '');
@@ -309,6 +311,21 @@ describe('utils', () => {
         });
     });
     describe('.downloadUpdateInstaller()', () => {
+        const config = {
+            version: '2022',
+            updateUrl: 'https://www.microsoft.com/en-us/download/details.aspx?id=105013',
+        };
+        const updateUrl = 'https://download.microsoft.com/download/a89001cb-9c99-48d3-9f14-ded054b35fe4/SQLServer2022-KB5104824-x64.exe';
+        function metadata(files: unknown, error = '') {
+            return `<script>window.__DLCDetails__=${JSON.stringify({
+                dlcDetailsView: {
+                    error,
+                    downloadTitle: 'SQL Server 2022',
+                    downloadDescription: 'Cumulative Update Package 27 for SQL Server 2022 - KB5104824',
+                    downloadFile: files,
+                },
+            })};</script>`;
+        }
         beforeEach(() => {
             fetchResponse.ok = true;
             fetchResponse.status = 200;
@@ -342,36 +359,204 @@ describe('utils', () => {
             assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
         });
         it('uses an .exe url directly', async () => {
+            const directUrl = 'https://download.microsoft.com/download/a/7/7/a77b5753-8fe7-4804-bfc5-591d9a626c98/SQLServer2016SP3-KB5003279-x64-ENU.exe';
             const res = await utils.downloadUpdateInstaller({
                 exeUrl: 'https://example.com/installer.exe',
-                version: '2022',
-                updateUrl: 'https://example.com/sqlupdate.exe',
+                version: '2016',
+                updateUrl: directUrl,
             });
             assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
             assert.equal(fetchMock.mock.callCount(), 0);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], directUrl);
         });
-        it('returns empty string if URL is not resolved', async () => {
-            fetchResponse.text.mock.mockImplementation(async () => '<a href="https://example.com/update.exe">');
-            const res = await utils.downloadUpdateInstaller({
-                exeUrl: 'https://example.com/installer.exe',
-                version: '2022',
-                updateUrl: 'https://example.com/sqlupdate.html',
+        it('resolves current Microsoft download metadata without executing JavaScript', async () => {
+            const body = metadata([{
+                name: 'SQLServer2022-KB5104824-x64.exe', url: updateUrl, version: '16.0.4295.3',
+            }]) + '<script>throw new Error("must not execute");</script>';
+            assert.equal(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/.test(body), false);
+            fetchResponse.text.mock.mockImplementation(async () => body);
+            const res = await utils.downloadUpdateInstaller(config);
+            assert.match(res, /\/sqlupdate\.exe$/);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        it('supports Microsoft pages containing both metadata and a legacy link', async () => {
+            fetchResponse.text.mock.mockImplementation(async () => metadata([{
+                name: 'SQLServer2022-KB5104824-x64.exe', url: updateUrl, version: '16.0.4295.3',
+            }]) + `<a href="${updateUrl}">download</a>`);
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.callCount(), 1);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        it('supports escaped JSON URLs and ignores unrelated files and links', async () => {
+            fetchResponse.text.mock.mockImplementation(async () => metadata([
+                null, {}, { url: 42 }, { url: 'https://download.microsoft.com/readme.txt' },
+                { url: updateUrl }, { url: updateUrl },
+            ]).replaceAll('https://', 'https:\\/\\/') + '<a href="https://download.microsoft.com/unrelated.exe">link</a>');
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        it('supports legacy anchors without capturing adjacent attributes or links', async () => {
+            fetchResponse.text.mock.mockImplementation(async () =>
+                `<A class="download" HREF = '${updateUrl}' data-file="another.exe">download</A> <a href="https://example.com/other.exe">other</a>`);
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        for (const body of [
+            '', '<a href="https://example.com/update.exe">',
+            '<a href="http://download.microsoft.com/update.exe">',
+            '<a href="https://download.microsoft.com.evil.example/update.exe">',
+            '<a href="https://download.microsoft.com@evil.example/update.exe">',
+            '<a href="https://download.microsoft.com/update.exe.txt">',
+            '<script>const url = "https://download.microsoft.com/update.exe";</script>',
+            metadata([{ url: 'https://example.com/update.exe' }]),
+        ]) {
+            it(`rejects missing or invalid installer URLs: ${body}`, async () => {
+                fetchResponse.text.mock.mockImplementation(async () => body);
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found/);
+                assert.equal(fetchMock.mock.callCount(), 1);
+                assert.equal(tc.downloadTool.mock.callCount(), 0);
+                assert.equal(tc.cacheFile.mock.callCount(), 0);
+                assert.equal(core.warning.mock.callCount(), 0);
+                assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
             });
-            assert.equal(res, '');
+        }
+        for (const body of [
+            '<script>window.__DLCDetails__={invalid};</script>',
+            '<script>window.__DLCDetails__={"dlcDetailsView":</script>',
+            '<script>window.__DLCDetails__=null;</script>',
+            '<script>window.__DLCDetails__=[];</script>',
+            '<script>window.__DLCDetails__={"dlcDetailsView":null};</script>',
+            '<script>window.__DLCDetails__={"renamedDetailsView":{}};</script>',
+            '<script>window.__DLCDetails__={"dlcDetailsView":{"renamedDownloadFile":[]}};</script>',
+            metadata({ url: updateUrl }),
+        ]) {
+            it(`falls back to legacy links when metadata is malformed: ${body}`, async () => {
+                fetchResponse.text.mock.mockImplementation(async () => body + `<a href="${updateUrl}">download</a>`);
+                await utils.downloadUpdateInstaller(config);
+                assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+                assert.ok(core.debug.mock.calls.some((call) => String(call.arguments[0]).startsWith('Unable to use cumulative update metadata: ')));
+                assert.equal(core.warning.mock.callCount(), 0);
+            });
+            it(`includes metadata problems when no legacy link exists: ${body}`, async () => {
+                fetchResponse.text.mock.mockImplementation(async () => body);
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found.* Metadata problems: .+/);
+                assert.equal(fetchMock.mock.callCount(), 1);
+                assert.equal(tc.downloadTool.mock.callCount(), 0);
+                assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
+            });
+        }
+        it('falls back to legacy links when metadata contains no usable installer', async () => {
+            fetchResponse.text.mock.mockImplementation(async () => metadata([{ url: 'https://example.com/untrusted.exe' }]) + `<a href="${updateUrl}">download</a>`);
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        it('uses valid metadata after an unusable metadata script', async () => {
+            fetchResponse.text.mock.mockImplementation(async () => '<script>window.__DLCDetails__={invalid};</script>' + metadata([{ url: updateUrl }]));
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+        });
+        it('includes the Microsoft metadata error when no installer is found', async () => {
+            const body = metadata([], 'Download temporarily unavailable');
+            fetchResponse.text.mock.mockImplementation(async () => body);
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found.* Microsoft download page error: Download temporarily unavailable/);
+            assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === 'Microsoft download page error: Download temporarily unavailable'));
+            assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
+        });
+        it('can use a legacy link despite a Microsoft metadata error', async () => {
+            fetchResponse.text.mock.mockImplementation(async () => metadata([], 'Metadata unavailable') + `<a href="${updateUrl}">download</a>`);
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+            assert.equal(core.warning.mock.callCount(), 0);
+        });
+        for (const body of [
+            metadata([{ url: updateUrl }, { url: 'https://download.microsoft.com/another.exe' }]),
+            `<a href="${updateUrl}">one</a><a href="https://download.microsoft.com/another.exe">two</a>`,
+        ]) {
+            it(`rejects ambiguous installer files: ${body}`, async () => {
+                fetchResponse.text.mock.mockImplementation(async () => body);
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), /Multiple cumulative update installers/);
+                assert.equal(tc.downloadTool.mock.callCount(), 0);
+                assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
+            });
+        }
+        for (const status of [403, 404]) {
+            it(`fails explicitly after retrying HTTP ${status}`, async () => {
+                fetchResponse.ok = false;
+                fetchResponse.status = status;
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), new RegExp(`after 3 attempt\\(s\\): HTTP ${status}`));
+                assert.equal(fetchMock.mock.callCount(), 3);
+                assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
+                assert.equal(tc.downloadTool.mock.callCount(), 0);
+                assert.equal(core.warning.mock.callCount(), 0);
+            });
+        }
+        for (const status of [301, 400, 401, 403, 404, 408, 429, 500, 503]) {
+            it(`retries transient HTTP ${status}`, async () => {
+                fetchMock.mock.mockImplementationOnce(async () => ({ ...fetchResponse, ok: false, status }));
+                await utils.downloadUpdateInstaller(config);
+                assert.equal(fetchMock.mock.callCount(), 2);
+                assert.equal(delay.mock.calls[0].arguments[0], 5000);
+                assert.ok(core.info.mock.calls.some((call) => call.arguments[0] === `Cumulative update page fetch failed (HTTP ${status}); retrying (2/3)`));
+                assert.equal(core.warning.mock.callCount(), 0);
+            });
+        }
+        for (const error of [new TypeError('fetch failed'), new DOMException('timed out', 'TimeoutError')]) {
+            it(`retries transient ${error.name}`, async () => {
+                fetchMock.mock.mockImplementationOnce(async () => { throw error; });
+                await utils.downloadUpdateInstaller(config);
+                assert.equal(fetchMock.mock.callCount(), 2);
+                assert.ok(core.info.mock.calls.some((call) => String(call.arguments[0]).includes('retrying (2/3)')));
+                assert.equal(core.warning.mock.callCount(), 0);
+            });
+        }
+        it('retries a transient response body failure', async () => {
+            fetchResponse.text.mock.mockImplementationOnce(async () => { throw new TypeError('terminated'); });
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(fetchMock.mock.callCount(), 2);
+        });
+        it('does not retry non-network errors', async () => {
+            fetchMock.mock.mockImplementation(async () => { throw new Error('unexpected error'); });
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 1 attempt\(s\): unexpected error/);
             assert.equal(fetchMock.mock.callCount(), 1);
         });
-        it('returns empty string if the update page request is rejected', async () => {
+        it('fails after three unsuccessful HTTP attempts', async () => {
             fetchResponse.ok = false;
-            fetchResponse.status = 403;
-            const res = await utils.downloadUpdateInstaller({
-                exeUrl: 'https://example.com/installer.exe',
-                version: '2022',
-                updateUrl: 'https://example.com/sqlupdate.html',
+            fetchResponse.status = 503;
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): HTTP 503/);
+            assert.equal(fetchMock.mock.callCount(), 3);
+            assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
+            assert.equal(core.info.mock.callCount(), 2);
+            assert.equal(core.warning.mock.callCount(), 0);
+            assert.equal(tc.downloadTool.mock.callCount(), 0);
+        });
+        it('fails after three unsuccessful network attempts', async () => {
+            fetchMock.mock.mockImplementation(async () => { throw new TypeError('fetch failed'); });
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): fetch failed/);
+            assert.equal(fetchMock.mock.callCount(), 3);
+            assert.equal(tc.cacheFile.mock.callCount(), 0);
+        });
+        for (const [cause, detail] of [
+            [new Error('connection reset'), 'connection reset'],
+            [{ code: 'ENOTFOUND' }, 'ENOTFOUND'],
+            [{ message: 'other side closed', code: 'UND_ERR_SOCKET' }, 'other side closed / UND_ERR_SOCKET'],
+            ['ECONNRESET', 'ECONNRESET'],
+        ] as const) {
+            it(`preserves the network failure cause: ${detail}`, async () => {
+                const error = new TypeError('fetch failed', { cause });
+                fetchMock.mock.mockImplementation(async () => { throw error; });
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), {
+                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): fetch failed (${detail})`,
+                    cause: error,
+                });
+                assert.equal(fetchMock.mock.callCount(), 3);
+                assert.equal(core.info.mock.calls[0].arguments[0], `Cumulative update page fetch failed (fetch failed (${detail})); retrying (2/3)`);
+                assert.equal(core.warning.mock.callCount(), 0);
             });
-            assert.equal(res, '');
-            const calls = core.info.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Response code'));
-            assert.equal(calls.length, 1);
-            assert.equal(String(calls[0].arguments[0]), 'Response code: 403');
+        }
+        it('propagates installer download failures without caching', async () => {
+            tc.downloadTool.mock.mockImplementation(async () => { throw new Error('download failed'); });
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /download failed/);
+            assert.equal(tc.cacheFile.mock.callCount(), 0);
         });
     });
     describe('.gatherSummaryFiles()', () => {

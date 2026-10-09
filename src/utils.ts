@@ -1,5 +1,6 @@
 import { basename, extname, dirname, join as joinPaths } from 'node:path';
 import { readdir } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as glob from '@actions/glob';
@@ -226,8 +227,100 @@ export async function downloadExeInstaller(config: VersionConfig): Promise<strin
     return joinPaths(toolPath, 'setup.exe');
 }
 
+function isUpdateDownloadUrl(value: unknown): value is string {
+    return typeof value === 'string' && /^https:\/\/download\.microsoft\.com\/[^\s"'<>?#]+\.exe$/i.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function extractUpdateDownloadUrl(body: string): string {
+    const links = new Set<string>();
+    const metadataProblems: string[] = [];
+    for (const [, script] of body.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
+        const assignment = script.match(/^\s*window\.__DLCDetails__\s*=\s*([\s\S]*?)\s*;?\s*$/);
+        if (!assignment) {
+            continue;
+        }
+        try {
+            const details: unknown = JSON.parse(assignment[1]);
+            if (!isRecord(details) || !isRecord(details.dlcDetailsView)) {
+                throw new Error('Invalid cumulative update metadata in Microsoft download page');
+            }
+            const { downloadFile: files, error: pageError } = details.dlcDetailsView;
+            if (typeof pageError === 'string' && pageError.trim()) {
+                const reason = `Microsoft download page error: ${pageError}`;
+                metadataProblems.push(reason);
+                core.debug(reason);
+            }
+            if (!Array.isArray(files)) {
+                throw new Error('Invalid cumulative update file list in Microsoft download page');
+            }
+            for (const file of files) {
+                if (isRecord(file) && isUpdateDownloadUrl(file.url)) {
+                    links.add(file.url);
+                }
+            }
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            metadataProblems.push(reason);
+            core.debug(`Unable to use cumulative update metadata: ${reason}`);
+        }
+    }
+    if (!links.size) {
+        for (const [, link] of body.matchAll(/<a\b[^>]*?\s+href\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+            if (isUpdateDownloadUrl(link)) {
+                links.add(link);
+            }
+        }
+    }
+    if (links.size !== 1) {
+        core.debug(body);
+        const reason = links.size
+            ? 'Multiple cumulative update installers found in Microsoft download page'
+            : 'No HTTPS download.microsoft.com .exe cumulative update installer found in Microsoft download page';
+        throw new Error(`${reason}${metadataProblems.length ? `. Metadata problems: ${metadataProblems.join('; ')}` : ''}`);
+    }
+    const [link] = links;
+    return link;
+}
+
+async function fetchUpdatePage(url: string): Promise<string> {
+    const attempts = 3;
+    for (let attempt = 1; ; attempt++) {
+        let retryable = false;
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+            if (!res.ok) {
+                retryable = true;
+                throw new Error(`HTTP ${res.status}`);
+            }
+            return await res.text();
+        } catch (error) {
+            retryable ||= error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError');
+            let reason = error instanceof Error ? error.message : String(error);
+            if (error instanceof Error && error.cause) {
+                const cause = error.cause;
+                const causeDetails = isRecord(cause)
+                    ? [cause.message, cause.code].filter((value): value is string => typeof value === 'string' && value.length > 0).join(' / ')
+                    : typeof cause === 'string' ? cause : '';
+                if (causeDetails) {
+                    reason += ` (${causeDetails})`;
+                }
+            }
+            if (!retryable || attempt === attempts) {
+                throw new Error(`Unable to fetch cumulative update page ${url} after ${attempt} attempt(s): ${reason}`, { cause: error });
+            }
+            core.info(`Cumulative update page fetch failed (${reason}); retrying (${attempt + 1}/${attempts})`);
+            await delay(5000 * attempt);
+        }
+    }
+}
+
 /**
- * Downloads cumulative updates for supported versions.
+ * Downloads cumulative updates for supported versions. Throws with the failure
+ * reason if a configured update cannot be fetched or resolved.
  *
  * @param {VersionConfig} config
  * @returns {Promise<string>}
@@ -236,28 +329,11 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
     if (!config.updateUrl) {
         throw new Error('No update url provided');
     }
-    // resolve download url
-    let downloadLink: string | null = null;
-    if (!config.updateUrl.endsWith('.exe')) {
-        const res = await fetch(config.updateUrl);
-        if (res.ok) {
-            const body = await res.text();
-            const [, link] = body.match(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/) ?? [];
-            if (link) {
-                downloadLink = link;
-            } else {
-                core.info('Unable to find download link in body');
-                core.debug(body);
-            }
-        }
-        if (!downloadLink) {
-            core.warning('Unable to download cumulative updates');
-            core.info(`Response code: ${res.status}`);
-            return '';
-        }
-    }
-    core.info(`Downloading cumulative update from ${downloadLink ?? config.updateUrl}`);
-    const updatePath = await downloadTool(downloadLink ?? config.updateUrl);
+    const downloadLink = config.updateUrl.endsWith('.exe')
+        ? config.updateUrl
+        : extractUpdateDownloadUrl(await fetchUpdatePage(config.updateUrl));
+    core.info(`Downloading cumulative update from ${downloadLink}`);
+    const updatePath = await downloadTool(downloadLink);
     if (core.isDebug()) {
         const hash = await generateFileHash(updatePath);
         core.debug(`Got update file with hash SHA256=${hash.toString('base64')}`);
