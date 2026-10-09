@@ -72,6 +72,12 @@ If the update still can't be downloaded, the action logs a warning with the
 reason and installs SQL Server without updates. Versions without a configured
 update URL skip updates.
 
+### Reboot requests
+
+If SQL Server setup succeeds but asks for a reboot (exit code 3010), the action
+logs a warning and carries on without rebooting. The wait-for-ready check (when
+`wait-for-ready` is enabled) then confirms the instance is accepting queries.
+
 ### Basic usage
 
 ```yml

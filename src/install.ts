@@ -120,7 +120,7 @@ export default async function install() {
     const instanceName = 'MSSQLSERVER';
     try {
         // @todo - make sure that the arguments are unique / don't conflict
-        await core.group('Installing SQL Server', () => exec.exec(`"${toolPath}"`, [
+        const exitCode = await core.group('Installing SQL Server', () => exec.exec(`"${toolPath}"`, [
             '/q',
             '/ACTION=Install',
             '/FEATURES=SQLEngine', //,FullText,RS,Tools
@@ -137,7 +137,15 @@ export default async function install() {
             ...installArgs,
         ], {
             windowsVerbatimArguments: true,
+            ignoreReturnCode: true,
         }));
+        // 3010 means setup succeeded but requested a reboot, which isn't possible mid-job. Carry on
+        // and let the readiness check confirm the instance is usable.
+        if (exitCode === 3010) {
+            core.warning('SQL Server setup succeeded but requested a reboot (exit code 3010); continuing without rebooting');
+        } else if (exitCode !== 0) {
+            throw new Error(`SQL Server setup failed with exit code ${exitCode}`);
+        }
         // set outputs
         core.setOutput('sa-password', password);
         core.setOutput('instance-name', instanceName);

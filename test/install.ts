@@ -146,7 +146,22 @@ describe('install', () => {
         await install();
         const call = exec.exec.mock.calls[0];
         assert.equal(call.arguments[0], '"C:/tmp/box/setup.exe"');
-        assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true });
+        assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true, ignoreReturnCode: true });
+    });
+    it('warns and waits for the database if setup requests a reboot', async () => {
+        exec.exec.mock.mockImplementation(async () => 3010);
+        await install();
+        assert.equal(core.warning.mock.callCount(), 1);
+        assert.equal(core.warning.mock.calls[0].arguments[0], 'SQL Server setup succeeded but requested a reboot (exit code 3010); continuing without rebooting');
+        assert.equal(utils.waitForDatabase.mock.callCount(), 1);
+        assert.deepEqual(core.setOutput.mock.calls.map((c) => c.arguments), [['sa-password', 'secret password'], ['instance-name', 'MSSQLSERVER']]);
+    });
+    it('fails if setup exits with any other non-zero code', async () => {
+        exec.exec.mock.mockImplementation(async () => 1);
+        await assert.rejects(() => install(), { message: 'SQL Server setup failed with exit code 1' });
+        assert.equal(utils.waitForDatabase.mock.callCount(), 0);
+        assert.equal(core.setOutput.mock.callCount(), 0);
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
     });
     it('runs an exe install', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe' }));
