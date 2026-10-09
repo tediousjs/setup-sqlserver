@@ -14,7 +14,9 @@ See [action.yml](./action.yml):
     skip-os-check: false
 
     # SQL Server version: 2008, 2012, 2014, 2016, 2017, 2019, 2022, or 2025. "latest"
-    # selects 2025.
+    # selects 2025. 2008, 2012 and 2014 only pass the OS check on Windows Server 2019
+    # or older, which GitHub-hosted runners no longer offer; set skip-os-check to
+    # attempt them on newer runners.
     # Default: latest
     sqlserver-version: 'latest'
 
