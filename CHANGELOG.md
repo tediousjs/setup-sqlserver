@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.3](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.2...v4.0.3) (2026-10-09)
+
+### Bug Fixes
+
+* harden SQL Server 2025 installer downloads ([2ab5f68](https://github.com/tediousjs/setup-sqlserver/commit/2ab5f68399b5a98ea8295c47c41c0273be536696))
+* isolate box extraction and quote installer paths ([0b1a8dd](https://github.com/tediousjs/setup-sqlserver/commit/0b1a8dda99ea07c9bd765c55340b8dca991ba2b9))
+
 ## [4.0.2](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.1...v4.0.2) (2026-10-09)
 
 ### Bug Fixes
