@@ -117,6 +117,26 @@ describe('MsiInstaller', () => {
         });
     });
     describe('.install()', () => {
+        let arch: PropertyDescriptor;
+        beforeEach(() => {
+            arch = Object.getOwnPropertyDescriptor(process, 'arch')!;
+        });
+        afterEach(() => {
+            Object.defineProperty(process, 'arch', arch);
+        });
+        for (const [processArch, installerArch] of [['x64', 'x64'], ['arm64', 'x86']]) {
+            it(`looks up and caches the installer for the same arch on ${processArch}`, async () => {
+                Object.defineProperty(process, 'arch', { value: processArch });
+                const installer = new MsiInstaller({
+                    name: 'test',
+                    version: '18',
+                    urls: { x86: 'https://example.com/x86.msi', x64: 'https://example.com/x64.msi' },
+                });
+                await installer.install();
+                assert.deepEqual(tc.find.mock.calls[0].arguments, ['test', '18.0.0', installerArch]);
+                assert.deepEqual(tc.cacheFile.mock.calls[0].arguments.slice(1), ['test.msi', 'test', '18.0.0', installerArch]);
+            });
+        }
         it('returns a cached path if found', async () => {
             tc.find.mock.mockImplementation(() => 'C:/cache/test/x86');
             const installer = new MsiInstaller({
