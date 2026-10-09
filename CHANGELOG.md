@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.0.2](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.1...v4.0.2) (2026-10-09)
+
+### Bug Fixes
+
+* resolve cumulative update links from Microsoft download pages ([de2365c](https://github.com/tediousjs/setup-sqlserver/commit/de2365c1f2a79da1468fd184c86f6ef0258c87f4)), closes [tediousjs/tedious#1807](https://github.com/tediousjs/tedious/issues/1807)
+
 ## [4.0.1](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.0...v4.0.1) (2026-07-19)
 
 ### Bug Fixes
