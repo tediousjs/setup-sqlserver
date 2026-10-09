@@ -1,5 +1,5 @@
-import { basename, extname, dirname, join as joinPaths } from 'node:path';
 import { mkdtemp, readdir } from 'node:fs/promises';
+import { basename, extname, dirname, join as joinPaths } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
@@ -137,17 +137,30 @@ export async function downloadBoxInstaller(config: VersionConfig): Promise<strin
         core.debug(`Got setup file (exe) with hash SHA256=${hashes[0].toString('base64')}`);
         core.debug(`Got setup file (box) with hash SHA256=${hashes[1].toString('base64')}`);
     }
-    const downloadDir = dirname(exePath);
-    core.info(`Extracting installer`);
+    return extractAndCacheInstaller(exePath, config.version);
+}
+
+/**
+ * Extract a self-extracting SQL Server installer into its own temporary
+ * directory and add the extracted files to the tool cache.
+ *
+ * @param {string} exePath
+ * @param {string} version
+ * @returns {Promise<string>} The path to the cached setup.exe
+ */
+async function extractAndCacheInstaller(exePath: string, version: string): Promise<string> {
+    const workDir = dirname(exePath);
+    const setupDir = await mkdtemp(joinPaths(workDir, 'sqlserver-setup-'));
+    core.info('Extracting installer');
     await exec.exec(`"${exePath}"`, [
         '/qs',
-        `/x:setup`,
+        `/x:"${setupDir}"`,
     ], {
-        cwd: downloadDir,
+        cwd: workDir,
         windowsVerbatimArguments: true,
     });
     core.info('Adding to the cache');
-    const toolPath = await tc.cacheDir(joinPaths(downloadDir, 'setup'), 'sqlserver', config.version);
+    const toolPath = await tc.cacheDir(setupDir, 'sqlserver', version);
     core.debug(`Cached @ ${toolPath}`);
     return joinPaths(toolPath, 'setup.exe');
 }
@@ -190,19 +203,7 @@ export async function downloadSseiInstaller(config: VersionConfig): Promise<stri
     if (exeFiles.length > 1) {
         throw new Error(`SSEI bootstrapper produced multiple installer exes: ${exeFiles.join(', ')}`);
     }
-    const exePath = joinPaths(mediaDir, exeFiles[0]);
-    core.info('Extracting installer');
-    await exec.exec(`"${exePath}"`, [
-        '/qs',
-        '/x:setup',
-    ], {
-        cwd: mediaDir,
-        windowsVerbatimArguments: true,
-    });
-    core.info('Adding to the cache');
-    const toolPath = await tc.cacheDir(joinPaths(mediaDir, 'setup'), 'sqlserver', config.version);
-    core.debug(`Cached @ ${toolPath}`);
-    return joinPaths(toolPath, 'setup.exe');
+    return extractAndCacheInstaller(joinPaths(mediaDir, exeFiles[0]), config.version);
 }
 
 /**

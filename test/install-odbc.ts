@@ -52,7 +52,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    'C:/tmp/msodbcsql.msi',
+                    '"C:/tmp/msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },
@@ -69,7 +69,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    'C:/tmp/cache/msodbcsql.msi',
+                    '"C:/tmp/cache/msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },
@@ -86,7 +86,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    'C:/tmp/cache/msodbcsql.msi',
+                    '"C:/tmp/cache/msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },

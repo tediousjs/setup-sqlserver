@@ -171,7 +171,7 @@ describe('install', () => {
         await install();
         const args = exec.exec.mock.calls[0].arguments[1] as string[];
         assert.ok(args.includes('/UPDATEENABLED=1'));
-        assert.ok(args.includes('/UpdateSource=C:/tmp/exe'));
+        assert.ok(args.includes('/UpdateSource="C:/tmp/exe"'));
     });
     it('uses cached updates if found', async () => {
         tc.find.mock.mockImplementation((tool: string) => tool === 'sqlupdate' ? 'C:/tool-cache/sql-update' : '');
@@ -179,7 +179,7 @@ describe('install', () => {
         await install();
         const args = exec.exec.mock.calls[0].arguments[1] as string[];
         assert.ok(args.includes('/UPDATEENABLED=1'));
-        assert.ok(args.includes('/UpdateSource=C:/tool-cache/sql-update'));
+        assert.ok(args.includes('/UpdateSource="C:/tool-cache/sql-update"'));
     });
     for (const error of [new Error('Unable to fetch cumulative update page: HTTP 403'), 'Unable to fetch cumulative update page: HTTP 403']) {
         it(`installs without updates and warns if requested updates fail with ${typeof error}`, async () => {

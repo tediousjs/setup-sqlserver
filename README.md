@@ -53,7 +53,7 @@ See [action.yml](./action.yml):
 Set `sqlserver-version` to `'2025'` (or `'sql-2025'`) to install SQL Server
 2025 Standard Developer edition. The default, `'latest'`, also selects 2025.
 The action downloads the installation media using Microsoft's SSEI bootstrapper
-and caches the extracted installer for subsequent runs.
+and attempts to cache the extracted installer for subsequent runs.
 
 ```yaml
 - name: Install SQL Server 2025
