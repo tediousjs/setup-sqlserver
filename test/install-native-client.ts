@@ -43,8 +43,10 @@ describe('install-native-client', () => {
             });
         });
         it('installs from cache', async () => {
+            Object.defineProperty(process, 'arch', { value: 'x64' });
             tc.find.mock.mockImplementation(() => 'C:/tmp/');
             await installNativeClient('11');
+            assert.deepEqual(tc.find.mock.calls[0].arguments, ['sqlncli', '11.0.0', 'x64']);
             assert.equal(tc.downloadTool.mock.callCount(), 0);
             assert.equal(exec.exec.mock.callCount(), 1);
             const call = exec.exec.mock.calls[0];
