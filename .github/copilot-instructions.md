@@ -46,13 +46,13 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 2. Validates OS compatibility using version config from `src/versions.ts`
 3. Optionally installs SQL Native Client (`src/install-native-client.ts`) and ODBC driver (`src/install-odbc.ts`)
 4. Downloads or cache-hits the SQL Server installer (box+exe, standalone exe, or SSEI bootstrapper)
-5. Optionally downloads cumulative updates (resolves Microsoft download-page JSON, falls back to legacy links if metadata is unusable, retries network errors, timeouts and all non-2xx page responses up to three times with 5- and 10-second delays, and warns then installs without updates if the download fails)
+5. Optionally downloads cumulative updates (resolves Microsoft download-page JSON, falls back to legacy `<a href>` links if the metadata is missing or unusable, fetches the page up to three times, retrying network errors, timeouts and non-2xx responses after 5 and then 10 seconds, and if resolving or downloading the update fails, warns and installs without updates)
 6. Runs the installer via `@actions/exec`
 7. Waits for the database to be ready (exponential backoff)
 
 **Installer abstraction:** `src/installers/` contains a base `Installer` class and `MsiInstaller` subclass used by the native client and ODBC installations. SQL Server itself uses direct exe/box download logic or the SSEI bootstrapper (for 2025+) in `src/utils.ts`.
 
-**Version registry:** `src/versions.ts` defines a `Map<string, VersionConfig>` with download URLs (exe/box or SSEI), optional update URLs, and OS compatibility constraints for each supported SQL Server version (2008–2025). SQL Server 2025+ uses the SSEI bootstrapper model (`sseiUrl`) instead of direct exe/box downloads. For SSEI versions, `downloadSseiInstaller()` downloads the media into an isolated temporary directory before extracting and caching the installer. Box and SSEI installers are both extracted into their own temporary directory before caching.
+**Version registry:** `src/versions.ts` defines a `Map<string, VersionConfig>` with download URLs (exe/box or SSEI), optional update URLs, and OS compatibility constraints for each supported SQL Server version (2008–2025). SQL Server 2025+ uses the SSEI bootstrapper model (`sseiUrl`) instead of direct exe/box downloads. For SSEI versions, `downloadSseiInstaller()` first downloads the media into its own temporary directory. Box and SSEI media are then extracted into a fresh temporary directory by `extractAndCacheInstaller()`, which checks that `setup.exe` was produced before adding it to the tool cache.
 
 **Build output:** Rollup (config in `rollup.config.mjs`) bundles everything into `lib/main/index.js` as a minified ESM module, which is what `action.yml` references. The `lib/` directory is committed to the repository. **Every commit must include up-to-date build output** — CI checks this by rebuilding and running `git diff-files --quiet`. Always run `npm run build` and commit the resulting changes to `lib/` and `README.md` before pushing.
 
