@@ -84,6 +84,13 @@ tool cache persists between jobs. A cached cumulative update is reused until it 
 delete the `sqlupdate` directory from the runner's tool cache to pick up a
 newer update.
 
+### Reboot requests
+
+If SQL Server setup succeeds but asks for a reboot (exit code 3010), the action
+logs a warning and carries on without rebooting. With `wait-for-ready` enabled,
+the action then fails if the instance doesn't respond to queries, rather than
+only warning as it does after a normal install.
+
 ### Basic usage
 
 ```yml

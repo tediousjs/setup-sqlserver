@@ -47,8 +47,8 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 3. Optionally installs SQL Native Client (`src/install-native-client.ts`) and ODBC driver (`src/install-odbc.ts`)
 4. Downloads or cache-hits the SQL Server installer (box+exe, standalone exe, or SSEI bootstrapper)
 5. Optionally downloads cumulative updates (resolves Microsoft download-page JSON, falls back to legacy `<a href>` links if the metadata is missing or unusable, fetches the page up to three times, retrying network errors, timeouts and non-2xx responses after 5 and then 10 seconds, and if resolving or downloading the update fails, warns and installs without updates)
-6. Runs the installer via `@actions/exec`
-7. Waits for the database to be ready (exponential backoff)
+6. Runs the installer via `@actions/exec` (exit code 3010, "succeeded but reboot required", is logged as a warning and treated as success; any other non-zero code fails the action)
+7. Waits for the database to be ready (exponential backoff); not becoming ready is a warning, or an error if setup exited 3010
 
 **Installer abstraction:** `src/installers/` contains a base `Installer` class and `MsiInstaller` subclass used by the native client and ODBC installations. SQL Server itself uses direct exe/box download logic or the SSEI bootstrapper (for 2025+) in `src/utils.ts`.
 
