@@ -52,7 +52,7 @@ export class MsiInstaller extends Installer {
         core.info('Running installer');
         const args: string[] = [
             '/i',
-            path,
+            `"${path}"`,
         ];
         if (this.guid) {
             args.push(`APPGUID={${this.guid}}`);

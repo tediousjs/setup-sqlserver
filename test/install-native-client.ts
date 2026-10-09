@@ -51,7 +51,7 @@ describe('install-native-client', () => {
             assert.equal(call.arguments[0], 'msiexec');
             assert.ok(Array.isArray(call.arguments[1]));
             assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true });
-            assert.ok(call.arguments[1].includes('C:/tmp/sqlncli.msi'));
+            assert.ok(call.arguments[1].includes('"C:/tmp/sqlncli.msi"'));
         });
         it('installs from web (x64)', async () => {
             Object.defineProperty(process, 'arch', { value: 'x64' });
@@ -62,7 +62,7 @@ describe('install-native-client', () => {
             assert.equal(exec.exec.mock.callCount(), 1);
             const call = exec.exec.mock.calls[0];
             assert.equal(call.arguments[0], 'msiexec');
-            assert.ok(call.arguments[1].includes('C:/tmp/cache/sqlncli.msi'));
+            assert.ok(call.arguments[1].includes('"C:/tmp/cache/sqlncli.msi"'));
         });
         it('installs from web (x32)', async () => {
             Object.defineProperty(process, 'arch', { value: 'x32' });
@@ -72,7 +72,7 @@ describe('install-native-client', () => {
             assert.equal(tc.cacheFile.mock.callCount(), 1);
             const call = exec.exec.mock.calls[0];
             assert.equal(call.arguments[0], 'msiexec');
-            assert.ok(call.arguments[1].includes('C:/tmp/cache/sqlncli.msi'));
+            assert.ok(call.arguments[1].includes('"C:/tmp/cache/sqlncli.msi"'));
         });
     });
 });

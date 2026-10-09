@@ -130,7 +130,7 @@ describe('MsiInstaller', () => {
             assert.equal(exec.exec.mock.callCount(), 1);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', 'C:/cache/test/x86/test.msi'],
+                ['/passive', '/i', '"C:/cache/test/x86/test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -145,7 +145,7 @@ describe('MsiInstaller', () => {
             assert.equal(tc.cacheFile.mock.callCount(), 1);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', 'C:/cache/installer/test.msi'],
+                ['/passive', '/i', '"C:/cache/installer/test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -160,7 +160,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', 'C:/cache/installer/test.msi', `APPGUID={${appGuid}}`],
+                ['/passive', '/i', '"C:/cache/installer/test.msi"', `APPGUID={${appGuid}}`],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -174,7 +174,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/i', 'C:/cache/installer/test.msi'],
+                ['/i', '"C:/cache/installer/test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -188,7 +188,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', 'C:/cache/installer/test.msi', 'REINSTALL="ALL"'],
+                ['/passive', '/i', '"C:/cache/installer/test.msi"', 'REINSTALL="ALL"'],
                 { windowsVerbatimArguments: true },
             ]);
         });

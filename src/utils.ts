@@ -1,5 +1,5 @@
+import { mkdtemp, readdir } from 'node:fs/promises';
 import { basename, extname, dirname, join as joinPaths } from 'node:path';
-import { readdir } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
@@ -137,17 +137,30 @@ export async function downloadBoxInstaller(config: VersionConfig): Promise<strin
         core.debug(`Got setup file (exe) with hash SHA256=${hashes[0].toString('base64')}`);
         core.debug(`Got setup file (box) with hash SHA256=${hashes[1].toString('base64')}`);
     }
-    const downloadDir = dirname(exePath);
-    core.info(`Extracting installer`);
+    return extractAndCacheInstaller(exePath, config.version);
+}
+
+/**
+ * Extract a self-extracting SQL Server installer into its own temporary
+ * directory and add the extracted files to the tool cache.
+ *
+ * @param {string} exePath
+ * @param {string} version
+ * @returns {Promise<string>} The path to the cached setup.exe
+ */
+async function extractAndCacheInstaller(exePath: string, version: string): Promise<string> {
+    const workDir = dirname(exePath);
+    const setupDir = await mkdtemp(joinPaths(workDir, 'sqlserver-setup-'));
+    core.info('Extracting installer');
     await exec.exec(`"${exePath}"`, [
         '/qs',
-        `/x:setup`,
+        `/x:"${setupDir}"`,
     ], {
-        cwd: downloadDir,
+        cwd: workDir,
         windowsVerbatimArguments: true,
     });
     core.info('Adding to the cache');
-    const toolPath = await tc.cacheDir(joinPaths(downloadDir, 'setup'), 'sqlserver', config.version);
+    const toolPath = await tc.cacheDir(setupDir, 'sqlserver', version);
     core.debug(`Cached @ ${toolPath}`);
     return joinPaths(toolPath, 'setup.exe');
 }
@@ -171,36 +184,26 @@ export async function downloadSseiInstaller(config: VersionConfig): Promise<stri
         core.debug(`Got SSEI bootstrapper with hash SHA256=${hash.toString('base64')}`);
     }
     // use the bootstrapper to download the actual media
-    const mediaDir = dirname(sseiPath);
+    const mediaDir = await mkdtemp(joinPaths(dirname(sseiPath), 'sqlserver-media-'));
     core.info('Downloading install media via SSEI bootstrapper');
     await exec.exec(`"${sseiPath}"`, [
         '/Action=Download',
-        `/MediaPath=${mediaDir}`,
+        `/MediaPath="${mediaDir}"`,
         '/MediaType=CAB',
         '/Quiet',
         '/Language=en-US',
     ], {
         windowsVerbatimArguments: true,
     });
-    // find the downloaded exe in the media directory
     const files = await readdir(mediaDir);
-    const exeFile = files.find((f) => f.endsWith('.exe') && f !== basename(sseiPath));
-    if (!exeFile) {
+    const exeFiles = files.filter((file) => file.toLowerCase().endsWith('.exe'));
+    if (exeFiles.length === 0) {
         throw new Error('SSEI bootstrapper did not produce an installer exe');
     }
-    const exePath = joinPaths(mediaDir, exeFile);
-    core.info('Extracting installer');
-    await exec.exec(`"${exePath}"`, [
-        '/qs',
-        '/x:setup',
-    ], {
-        cwd: mediaDir,
-        windowsVerbatimArguments: true,
-    });
-    core.info('Adding to the cache');
-    const toolPath = await tc.cacheDir(joinPaths(mediaDir, 'setup'), 'sqlserver', config.version);
-    core.debug(`Cached @ ${toolPath}`);
-    return joinPaths(toolPath, 'setup.exe');
+    if (exeFiles.length > 1) {
+        throw new Error(`SSEI bootstrapper produced multiple installer exes: ${exeFiles.join(', ')}`);
+    }
+    return extractAndCacheInstaller(joinPaths(mediaDir, exeFiles[0]), config.version);
 }
 
 /**

@@ -13,7 +13,8 @@ See [action.yml](./action.yml):
     # Default: false
     skip-os-check: false
 
-    # Version to use. Examples: 2008, 2012, 2014, etc. "latest" can also be used.
+    # SQL Server version: 2008, 2012, 2014, 2016, 2017, 2019, 2022, or 2025. "latest"
+    # selects 2025.
     # Default: latest
     sqlserver-version: 'latest'
 
@@ -46,6 +47,20 @@ See [action.yml](./action.yml):
     install-updates: false
 ```
 <!-- end usage -->
+
+### SQL Server 2025
+
+Set `sqlserver-version` to `'2025'` (or `'sql-2025'`) to install SQL Server
+2025 Standard Developer edition. The default, `'latest'`, also selects 2025.
+The action downloads the installation media using Microsoft's SSEI bootstrapper
+and attempts to cache the extracted installer for subsequent runs.
+
+```yaml
+- name: Install SQL Server 2025
+  uses: tediousjs/setup-sqlserver@v4
+  with:
+    sqlserver-version: '2025'
+```
 
 ### Cumulative updates
 

@@ -113,7 +113,7 @@ export default async function install() {
                 }
             });
             if (updatePath) {
-                installArgs.push('/UPDATEENABLED=1', `/UpdateSource=${dirname(updatePath)}`);
+                installArgs.push('/UPDATEENABLED=1', `/UpdateSource="${dirname(updatePath)}"`);
             }
         }
     }

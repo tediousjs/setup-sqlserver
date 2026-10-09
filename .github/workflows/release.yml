@@ -126,7 +126,7 @@ jobs:
     strategy:
       matrix:
         os: [ 'windows-2022', 'windows-2025' ]
-        sqlserver: [ 'sql-latest', 'sql-2022', 'sql-2019', 'sql-2017', 'sql-2016' ]
+        sqlserver: [ 'sql-latest', 'sql-2025', 'sql-2022', 'sql-2019', 'sql-2017', 'sql-2016' ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
