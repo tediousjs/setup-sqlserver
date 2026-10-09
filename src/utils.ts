@@ -159,6 +159,11 @@ async function extractAndCacheInstaller(exePath: string, version: string): Promi
         cwd: workDir,
         windowsVerbatimArguments: true,
     });
+    // don't cache an extraction that produced no setup.exe
+    const extracted = await readdir(setupDir);
+    if (!extracted.some((file) => file.toLowerCase() === 'setup.exe')) {
+        throw new Error(`Extracting the SQL Server ${version} installer did not produce setup.exe in ${setupDir} (found: ${extracted.join(', ') || 'no files'})`);
+    }
     core.info('Adding to the cache');
     const toolPath = await tc.cacheDir(setupDir, 'sqlserver', version);
     core.debug(`Cached @ ${toolPath}`);
@@ -198,7 +203,7 @@ export async function downloadSseiInstaller(config: VersionConfig): Promise<stri
     const files = await readdir(mediaDir);
     const exeFiles = files.filter((file) => file.toLowerCase().endsWith('.exe'));
     if (exeFiles.length === 0) {
-        throw new Error('SSEI bootstrapper did not produce an installer exe');
+        throw new Error(`SSEI bootstrapper did not produce an installer exe in ${mediaDir} (found: ${files.join(', ') || 'no files'})`);
     }
     if (exeFiles.length > 1) {
         throw new Error(`SSEI bootstrapper produced multiple installer exes: ${exeFiles.join(', ')}`);
