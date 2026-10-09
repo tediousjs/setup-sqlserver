@@ -69,8 +69,15 @@ the action downloads the update before starting SQL Server setup. Download-page
 requests are tried up to three times on network errors, timeouts, or non-2xx
 responses (including 403 and 404), with 5- and 10-second delays before retries.
 If the update still can't be downloaded, the action logs a warning with the
-reason and installs SQL Server without updates. Versions without a configured
-update URL skip updates.
+reason and installs SQL Server without updates. Update URLs are configured for
+SQL Server 2016 and later, including 2025 (and so the default, `'latest'`);
+older versions skip updates.
+
+### Reboot requests
+
+If SQL Server setup succeeds but asks for a reboot (exit code 3010), the action
+logs a warning and carries on without rebooting. The wait-for-ready check (when
+`wait-for-ready` is enabled) then confirms the instance is accepting queries.
 
 ### Basic usage
 
