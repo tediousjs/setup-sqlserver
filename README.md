@@ -74,11 +74,11 @@ update URL skip updates.
 
 ### Caching
 
-Downloaded SQL Server installers and cumulative updates are stored in the
-runner's tool cache and reused by later runs on the same runner for the same
-SQL Server version. GitHub-hosted runners start every job with a fresh tool
-cache, so this mainly benefits self-hosted runners whose tool cache persists
-between jobs. A cached cumulative update is reused until it is removed, so
+Downloaded SQL Server installers, cumulative updates, and ODBC and Native
+Client installers are stored in the runner's tool cache and reused by later
+runs on the same runner for the same version. GitHub-hosted runners start every
+job with a fresh tool cache, so this mainly benefits self-hosted runners whose
+tool cache persists between jobs. A cached cumulative update is reused until it is removed, so
 delete the `sqlupdate` directory from the runner's tool cache to pick up a
 newer update.
 

@@ -1,7 +1,7 @@
 import { join as joinPaths } from 'node:path';
 import * as core from '@actions/core';
-import * as tc from '@actions/tool-cache';
 import * as exec from '@actions/exec';
+import { cacheToolFile, findCachedTool } from '../tool-cache.ts';
 import { Installer, type InstallerConfig } from './installer.ts';
 
 export interface Urls {
@@ -38,13 +38,14 @@ export class MsiInstaller extends Installer {
     }
 
     public async install() {
-        let path = tc.find(this.name, this.version, this.getArch());
+        const arch = this.getArch();
+        let path = findCachedTool(this.name, this.version, arch);
         if (path) {
             core.info(`Found ${this.name} installer in cache @ ${path}`);
         } else {
             core.info(`Download ${this.name} installer from ${this.installUrl}`);
             path = await this.downloadInstaller(this.installUrl, '.msi').then((tmp) => {
-                return tc.cacheFile(tmp, `${this.name}.msi`, this.name, this.version);
+                return cacheToolFile(tmp, `${this.name}.msi`, this.name, this.version, arch);
             });
             core.info(`Downloaded ${this.name} installer to cache @ ${path}`);
         }
