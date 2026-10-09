@@ -539,6 +539,18 @@ describe('utils', () => {
             await utils.downloadUpdateInstaller(config);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
+        for (const [files, problem] of [
+            [[{ url: 'https://example.com/untrusted.exe' }, { url: 'https://example.com/untrusted.exe' }, { url: '' }, { url: 42 }], 'File list has no HTTPS download.microsoft.com .exe installer (found: https://example.com/untrusted.exe)'],
+            [[], 'File list has no HTTPS download.microsoft.com .exe installer'],
+        ] as const) {
+            it(`names metadata without a usable installer when no legacy link exists: ${problem}`, async () => {
+                fetchResponse.text.mock.mockImplementation(async () => metadata(files));
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), {
+                    message: `No HTTPS download.microsoft.com .exe cumulative update installer found in Microsoft download page. Metadata problems: ${problem}`,
+                });
+                assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === `Unable to use cumulative update metadata: ${problem}`));
+            });
+        }
         it('uses valid metadata after an unusable metadata script', async () => {
             fetchResponse.text.mock.mockImplementation(async () => '<script>window.__DLCDetails__={invalid};</script>' + metadata([{ url: updateUrl }]));
             await utils.downloadUpdateInstaller(config);
@@ -628,6 +640,7 @@ describe('utils', () => {
             [new Error('connection reset'), 'connection reset'],
             [{ code: 'ENOTFOUND' }, 'ENOTFOUND'],
             [{ message: 'other side closed', code: 'UND_ERR_SOCKET' }, 'other side closed / UND_ERR_SOCKET'],
+            [{ message: 'getaddrinfo ENOTFOUND download.example', code: 'ENOTFOUND' }, 'getaddrinfo ENOTFOUND download.example'],
             ['ECONNRESET', 'ECONNRESET'],
         ] as const) {
             it(`preserves the network failure cause: ${detail}`, async () => {
