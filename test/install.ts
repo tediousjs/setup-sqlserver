@@ -209,21 +209,21 @@ describe('install', () => {
     it('errors on os max support', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs' }));
         await assert.rejects(() => install(), {
-            message: 'Runner version windows-2022 is not supported for SQL Server maxOs. Please use windows-2019.',
+            message: 'Runner version windows-2022 is not supported for SQL Server maxOs. Please use windows-2019. Alternatively, set skip-os-check to attempt the installation anyway.',
         });
     });
     it('errors on os min support', async () => {
         utils.getOsVersion.mock.mockImplementation(async () => 2019);
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minOs' }));
         await assert.rejects(() => install(), {
-            message: 'Runner version windows-2019 is not supported for SQL Server minOs. Please use windows-2022.',
+            message: 'Runner version windows-2019 is not supported for SQL Server minOs. Please use windows-2022. Alternatively, set skip-os-check to attempt the installation anyway.',
         });
     });
     it('errors on os min & max support', async () => {
         utils.getOsVersion.mock.mockImplementation(async () => 2016);
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minMaxOs' }));
         await assert.rejects(() => install(), {
-            message: 'Runner version windows-2016 is not supported for SQL Server minMaxOs. Please use windows-2019 to windows-2022.',
+            message: 'Runner version windows-2016 is not supported for SQL Server minMaxOs. Please use windows-2019 to windows-2022. Alternatively, set skip-os-check to attempt the installation anyway.',
         });
     });
     it('continues if no os version found', async () => {
