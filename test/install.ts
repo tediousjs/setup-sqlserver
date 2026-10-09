@@ -188,6 +188,16 @@ describe('install', () => {
         assert.ok(args.includes('/UPDATEENABLED=1'));
         assert.ok(args.includes('/UpdateSource="C:/tmp/exe"'));
     });
+    it('downloads cumulative updates for an ssei install', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'ssei', installUpdates: true }));
+        await install();
+        assert.equal(utils.downloadUpdateInstaller.mock.calls[0].arguments[0], VERSIONS.get('ssei'));
+        const call = exec.exec.mock.calls[0];
+        assert.equal(call.arguments[0], '"C:/tmp/ssei/setup.exe"');
+        const args = call.arguments[1] as string[];
+        assert.ok(args.includes('/UPDATEENABLED=1'));
+        assert.ok(args.includes('/UpdateSource="C:/tmp/exe"'));
+    });
     it('uses cached updates if found', async () => {
         tc.find.mock.mockImplementation((tool: string) => tool === 'sqlupdate' ? 'C:/tool-cache/sql-update' : '');
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe', installUpdates: true }));
