@@ -46,7 +46,7 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 2. Validates OS compatibility using version config from `src/versions.ts`
 3. Optionally installs SQL Native Client (`src/install-native-client.ts`) and ODBC driver (`src/install-odbc.ts`)
 4. Downloads or cache-hits the SQL Server installer (box+exe, standalone exe, or SSEI bootstrapper)
-5. Optionally downloads cumulative updates
+5. Optionally downloads cumulative updates (resolves Microsoft download-page JSON, falls back to legacy links if metadata is unusable, retries network errors, timeouts and all non-2xx page responses up to three times with 5- and 10-second delays, and warns then installs without updates if the download fails)
 6. Runs the installer via `@actions/exec`
 7. Waits for the database to be ready (exponential backoff)
 

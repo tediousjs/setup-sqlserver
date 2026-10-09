@@ -173,6 +173,20 @@ describe('install', () => {
         assert.ok(args.includes('/UPDATEENABLED=1'));
         assert.ok(args.includes('/UpdateSource=C:/tool-cache/sql-update'));
     });
+    for (const error of [new Error('Unable to fetch cumulative update page: HTTP 403'), 'Unable to fetch cumulative update page: HTTP 403']) {
+        it(`installs without updates and warns if requested updates fail with ${typeof error}`, async () => {
+            utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ installUpdates: true }));
+            utils.downloadUpdateInstaller.mock.mockImplementation(async () => {
+                throw error;
+            });
+            await install();
+            const args = exec.exec.mock.calls[0].arguments[1] as string[];
+            assert.ok(!args.includes('/UPDATEENABLED=1'));
+            assert.ok(!args.some((arg) => arg.startsWith('/UpdateSource=')));
+            assert.equal(core.warning.mock.callCount(), 1);
+            assert.equal(core.warning.mock.calls[0].arguments[0], 'Unable to download cumulative updates; installing without updates. Unable to fetch cumulative update page: HTTP 403');
+        });
+    }
     it('skips cumulative updates if no update url', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'minOs', installUpdates: true }));
         await install();
