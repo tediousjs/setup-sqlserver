@@ -88,7 +88,7 @@ export default async function install() {
                 message += `windows-${max}`;
             }
             message += '.';
-            throw new Error(`Runner version windows-${osVersion} is not supported for SQL Server ${version}. ${message}`);
+            throw new Error(`Runner version windows-${osVersion} is not supported for SQL Server ${version}. ${message} Alternatively, set skip-os-check to attempt the installation anyway.`);
         }
     }
     if (nativeClientVersion) {

@@ -159,6 +159,11 @@ async function extractAndCacheInstaller(exePath: string, version: string): Promi
         cwd: workDir,
         windowsVerbatimArguments: true,
     });
+    // don't cache an extraction that produced no setup.exe
+    const extracted = await readdir(setupDir);
+    if (!extracted.some((file) => file.toLowerCase() === 'setup.exe')) {
+        throw new Error(`Extracting the SQL Server ${version} installer did not produce setup.exe in ${setupDir} (found: ${extracted.join(', ') || 'no files'})`);
+    }
     core.info('Adding to the cache');
     const toolPath = await tc.cacheDir(setupDir, 'sqlserver', version);
     core.debug(`Cached @ ${toolPath}`);
@@ -198,7 +203,7 @@ export async function downloadSseiInstaller(config: VersionConfig): Promise<stri
     const files = await readdir(mediaDir);
     const exeFiles = files.filter((file) => file.toLowerCase().endsWith('.exe'));
     if (exeFiles.length === 0) {
-        throw new Error('SSEI bootstrapper did not produce an installer exe');
+        throw new Error(`SSEI bootstrapper did not produce an installer exe in ${mediaDir} (found: ${files.join(', ') || 'no files'})`);
     }
     if (exeFiles.length > 1) {
         throw new Error(`SSEI bootstrapper produced multiple installer exes: ${exeFiles.join(', ')}`);
@@ -260,10 +265,14 @@ function extractUpdateDownloadUrl(body: string): string {
             if (!Array.isArray(files)) {
                 throw new Error('Invalid cumulative update file list in Microsoft download page');
             }
-            for (const file of files) {
-                if (isRecord(file) && isUpdateDownloadUrl(file.url)) {
-                    links.add(file.url);
-                }
+            const urls = files.filter(isRecord).map((file) => file.url);
+            const installerUrls = urls.filter(isUpdateDownloadUrl);
+            if (!installerUrls.length) {
+                const listed = [...new Set(urls.filter((url): url is string => typeof url === 'string' && url.length > 0))];
+                throw new Error(`File list has no HTTPS download.microsoft.com .exe installer${listed.length ? ` (found: ${listed.join(', ')})` : ''}`);
+            }
+            for (const url of installerUrls) {
+                links.add(url);
             }
         } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
@@ -289,6 +298,25 @@ function extractUpdateDownloadUrl(body: string): string {
     return link;
 }
 
+/**
+ * Summarise a fetch failure's cause, leaving out the error code when the
+ * message already contains it (e.g. "getaddrinfo ENOTFOUND host").
+ *
+ * @param {unknown} cause
+ * @returns {string}
+ */
+function describeCause(cause: unknown): string {
+    if (typeof cause === 'string') {
+        return cause;
+    }
+    if (!isRecord(cause)) {
+        return '';
+    }
+    const message = typeof cause.message === 'string' ? cause.message : '';
+    const code = typeof cause.code === 'string' && !message.includes(cause.code) ? cause.code : '';
+    return [message, code].filter(Boolean).join(' / ');
+}
+
 async function fetchUpdatePage(url: string): Promise<string> {
     const attempts = 3;
     for (let attempt = 1; ; attempt++) {
@@ -303,14 +331,9 @@ async function fetchUpdatePage(url: string): Promise<string> {
         } catch (error) {
             retryable ||= error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError');
             let reason = error instanceof Error ? error.message : String(error);
-            if (error instanceof Error && error.cause) {
-                const cause = error.cause;
-                const causeDetails = isRecord(cause)
-                    ? [cause.message, cause.code].filter((value): value is string => typeof value === 'string' && value.length > 0).join(' / ')
-                    : typeof cause === 'string' ? cause : '';
-                if (causeDetails) {
-                    reason += ` (${causeDetails})`;
-                }
+            const causeDetails = error instanceof Error ? describeCause(error.cause) : '';
+            if (causeDetails) {
+                reason += ` (${causeDetails})`;
             }
             if (!retryable || attempt === attempts) {
                 throw new Error(`Unable to fetch cumulative update page ${url} after ${attempt} attempt(s): ${reason}`, { cause: error });
