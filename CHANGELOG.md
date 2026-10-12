@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.4...v4.1.0) (2026-10-12)
+
+### Features
+
+* install cumulative updates for SQL Server 2025 ([cfe7900](https://github.com/tediousjs/setup-sqlserver/commit/cfe79005aa769c3811d2ae36a329aba84609bcbd))
+
+### Bug Fixes
+
+* treat SQL Server setup exit code 3010 as success ([a8ecd34](https://github.com/tediousjs/setup-sqlserver/commit/a8ecd344b816e6313d653dbce940480ebdc7ec2d))
+
 ## [4.0.4](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.3...v4.0.4) (2026-10-12)
 
 ### Bug Fixes
