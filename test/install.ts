@@ -146,7 +146,38 @@ describe('install', () => {
         await install();
         const call = exec.exec.mock.calls[0];
         assert.equal(call.arguments[0], '"C:/tmp/box/setup.exe"');
-        assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true });
+        assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true, ignoreReturnCode: true });
+    });
+    it('warns and waits for the database if setup requests a reboot', async () => {
+        exec.exec.mock.mockImplementation(async () => 3010);
+        await install();
+        assert.equal(core.warning.mock.callCount(), 1);
+        assert.equal(core.warning.mock.calls[0].arguments[0], 'SQL Server setup succeeded but requested a reboot (exit code 3010); continuing without rebooting');
+        assert.equal(utils.waitForDatabase.mock.callCount(), 1);
+        assert.deepEqual(core.setOutput.mock.calls.map((c) => c.arguments), [['sa-password', 'secret password'], ['instance-name', 'MSSQLSERVER']]);
+    });
+    it('fails if the database is not ready after setup requests a reboot', async () => {
+        const original = globalThis.setTimeout;
+        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
+        try {
+            exec.exec.mock.mockImplementation(async () => 3010);
+            utils.waitForDatabase.mock.mockImplementation(async () => 1);
+            await assert.rejects(() => install(), {
+                message: 'Database not ready after 5 attempts; setup requested a reboot (exit code 3010) that could not be performed',
+            });
+        } finally {
+            globalThis.setTimeout = original;
+        }
+        assert.equal(utils.waitForDatabase.mock.callCount(), 6);
+        assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
+    });
+    it('fails if setup exits with any other non-zero code', async () => {
+        exec.exec.mock.mockImplementation(async () => 1);
+        await assert.rejects(() => install(), { message: 'SQL Server setup failed with exit code 1' });
+        assert.equal(utils.waitForDatabase.mock.callCount(), 0);
+        assert.equal(core.setOutput.mock.callCount(), 0);
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
     });
     it('runs an exe install', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe' }));
@@ -170,6 +201,16 @@ describe('install', () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'exe', installUpdates: true }));
         await install();
         const args = exec.exec.mock.calls[0].arguments[1] as string[];
+        assert.ok(args.includes('/UPDATEENABLED=1'));
+        assert.ok(args.includes('/UpdateSource="C:/tmp/exe"'));
+    });
+    it('downloads cumulative updates for an ssei install', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'ssei', installUpdates: true }));
+        await install();
+        assert.equal(utils.downloadUpdateInstaller.mock.calls[0].arguments[0], VERSIONS.get('ssei'));
+        const call = exec.exec.mock.calls[0];
+        assert.equal(call.arguments[0], '"C:/tmp/ssei/setup.exe"');
+        const args = call.arguments[1] as string[];
         assert.ok(args.includes('/UPDATEENABLED=1'));
         assert.ok(args.includes('/UpdateSource="C:/tmp/exe"'));
     });
@@ -255,6 +296,7 @@ describe('install', () => {
             globalThis.setTimeout = original;
         }
         assert.equal(utils.waitForDatabase.mock.callCount(), 6);
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Database not ready after 5 attempts, moving on']);
     });
     it('waits until db is ready', async () => {
         const original = globalThis.setTimeout;

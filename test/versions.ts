@@ -16,5 +16,10 @@ describe('versions', () => {
                 '2008',
             ]);
         });
+        for (const version of ['2025', '2022', '2019', '2017', '2016']) {
+            it(`configures cumulative updates for ${version}`, () => {
+                assert.match(versions.VERSIONS.get(version)?.updateUrl ?? '', /^https:\/\/(www|download)\.microsoft\.com\//);
+            });
+        }
     });
 });

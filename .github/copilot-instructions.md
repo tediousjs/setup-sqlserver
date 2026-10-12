@@ -47,8 +47,8 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 3. Optionally installs SQL Native Client (`src/install-native-client.ts`) and ODBC driver (`src/install-odbc.ts`)
 4. Downloads or cache-hits the SQL Server installer (box+exe, standalone exe, or SSEI bootstrapper)
 5. Optionally downloads cumulative updates (resolves Microsoft download-page JSON, falls back to legacy `<a href>` links if the metadata is missing or unusable, fetches the page up to three times, retrying network errors, timeouts and non-2xx responses after 5 and then 10 seconds, and if resolving or downloading the update fails, warns and installs without updates)
-6. Runs the installer via `@actions/exec`
-7. Waits for the database to be ready (exponential backoff)
+6. Runs the installer via `@actions/exec` (exit code 3010, "succeeded but reboot required", is logged as a warning and treated as success; any other non-zero code fails the action)
+7. Waits for the database to be ready (exponential backoff); not becoming ready is a warning, or an error if setup exited 3010
 
 **Installer abstraction:** `src/installers/` contains a base `Installer` class and `MsiInstaller` subclass used by the native client and ODBC installations. SQL Server itself uses direct exe/box download logic or the SSEI bootstrapper (for 2025+) in `src/utils.ts`.
 
@@ -81,6 +81,7 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
   - Commits should be atomic and ideally deployable in isolation — all tests, linting, and commitlinting should pass on each individual commit.
   - PRs are merged using a **merge commit** (no squash-merge or rebase-merge). Each commit in the PR history is preserved.
   - To keep branches up to date with the base branch, **rebase** onto it rather than merging it in.
+  - Expect `lib/` conflicts when rebasing (including `--autosquash`) whenever more than one replayed commit rebuilt it. `lib/main/index.js` is a single minified line, so don't hand-merge it or its source map: resolve the source conflicts, run `npm run build`, `git add lib/`, then continue.
   - All changes must go through a **pull request** — no direct commits to master.
 - **Node version:** Pinned to 24 via `.nvmrc`. The action runs using `node24` (set in `action.yml`).
 - **Imports:** Use the `type` keyword for type-only imports (e.g., `import type { Foo } from './bar'`). When importing both types and values from the same module, use a single import with inline `type` (e.g., `import { type Foo, bar } from './baz'`). Imports are ordered alphabetically by module path, grouped as: `node:` built-ins first, then external packages, then local file imports.
