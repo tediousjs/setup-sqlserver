@@ -256,7 +256,7 @@ describe('utils', () => {
             ]);
             assert.deepEqual(readdir.mock.calls[0].arguments, ['C:/runner temp/sqlserver-setup-unique']);
             assert.deepEqual(tc.cacheDir.mock.calls[0].arguments, [
-                'C:/runner temp/sqlserver-setup-unique', 'sqlserver', '2022',
+                'C:/runner temp/sqlserver-setup-unique', 'sqlserver', '2022.0.0', undefined,
             ]);
         });
         it('fails without caching if extraction does not produce setup.exe', async () => {
@@ -306,6 +306,7 @@ describe('utils', () => {
                 version: '2022',
             });
             assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.deepEqual(tc.cacheFile.mock.calls[0].arguments.slice(1), ['setup.exe', 'sqlserver', '2022.0.0', undefined]);
         });
         it('throws if boxUrl', async () => {
             await assert.rejects(() => utils.downloadExeInstaller({
@@ -369,7 +370,7 @@ describe('utils', () => {
             ]);
             assert.deepEqual(readdir.mock.calls[1].arguments, ['C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique']);
             assert.deepEqual(tc.cacheDir.mock.calls[0].arguments, [
-                'C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique', 'sqlserver', '2025',
+                'C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique', 'sqlserver', '2025.0.0', undefined,
             ]);
         });
         it('recognizes uppercase executable extensions', async () => {
@@ -459,6 +460,7 @@ describe('utils', () => {
                 updateUrl: 'https://example.com/where-are-updates.html',
             });
             assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.deepEqual(tc.cacheFile.mock.calls[0].arguments.slice(1), ['sqlupdate.exe', 'sqlupdate', '2022.0.0', undefined]);
         });
         it('throws if no update url', async () => {
             await assert.rejects(() => utils.downloadUpdateInstaller({

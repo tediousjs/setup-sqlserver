@@ -43,8 +43,10 @@ describe('install-odbc', () => {
             });
         });
         it('installs from cache', async () => {
+            Object.defineProperty(process, 'arch', { value: 'x64' });
             tc.find.mock.mockImplementation(() => 'C:/tmp/');
             await installOdbc('18');
+            assert.deepEqual(tc.find.mock.calls[0].arguments, ['msodbcsql', '18.0.0', 'x64']);
             assert.equal(tc.downloadTool.mock.callCount(), 0);
             assert.equal(exec.exec.mock.callCount(), 1);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [

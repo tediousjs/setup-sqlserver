@@ -7,6 +7,7 @@ import * as glob from '@actions/glob';
 import * as io from '@actions/io';
 import * as tc from '@actions/tool-cache';
 import { generateFileHash } from './crypto.ts';
+import { cacheToolDir, cacheToolFile } from './tool-cache.ts';
 import type { VersionConfig } from './versions.ts';
 
 /**
@@ -165,7 +166,7 @@ async function extractAndCacheInstaller(exePath: string, version: string): Promi
         throw new Error(`Extracting the SQL Server ${version} installer did not produce setup.exe in ${setupDir} (found: ${extracted.join(', ') || 'no files'})`);
     }
     core.info('Adding to the cache');
-    const toolPath = await tc.cacheDir(setupDir, 'sqlserver', version);
+    const toolPath = await cacheToolDir(setupDir, 'sqlserver', version);
     core.debug(`Cached @ ${toolPath}`);
     return joinPaths(toolPath, 'setup.exe');
 }
@@ -230,7 +231,7 @@ export async function downloadExeInstaller(config: VersionConfig): Promise<strin
         core.debug(`Got setup file (exe) with hash SHA256=${hash.toString('base64')}`);
     }
     core.info('Adding to the cache');
-    const toolPath = await tc.cacheFile(exePath, 'setup.exe', 'sqlserver', config.version);
+    const toolPath = await cacheToolFile(exePath, 'setup.exe', 'sqlserver', config.version);
     core.debug(`Cached @ ${toolPath}`);
     return joinPaths(toolPath, 'setup.exe');
 }
@@ -365,7 +366,7 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
         core.debug(`Got update file with hash SHA256=${hash.toString('base64')}`);
     }
     core.info('Adding to the cache');
-    const toolPath = await tc.cacheFile(updatePath, 'sqlupdate.exe', 'sqlupdate', config.version);
+    const toolPath = await cacheToolFile(updatePath, 'sqlupdate.exe', 'sqlupdate', config.version);
     core.debug(`Cached @ ${toolPath}`);
     return joinPaths(toolPath, 'sqlupdate.exe');
 }
