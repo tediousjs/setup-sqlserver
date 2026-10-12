@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.0.4](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.3...v4.0.4) (2026-10-12)
+
+### Bug Fixes
+
+* clarify cumulative update resolution errors ([5a560ed](https://github.com/tediousjs/setup-sqlserver/commit/5a560edf5e4e231d775a93d13b19f71de09e792f))
+* fail clearly when installer extraction produces no setup.exe ([36034c1](https://github.com/tediousjs/setup-sqlserver/commit/36034c1b3a4dc9c4ef5455ca113f327454300e65))
+* mention skip-os-check when the runner OS is unsupported ([1683d33](https://github.com/tediousjs/setup-sqlserver/commit/1683d337553ed8bb742c2238226bc33a3cba68d5))
+* reuse cached ODBC and Native Client installers ([2de5cde](https://github.com/tediousjs/setup-sqlserver/commit/2de5cdec7697640b97f0e2c28a23b3c0483422e6))
+* reuse cached SQL Server installers and updates ([5af8436](https://github.com/tediousjs/setup-sqlserver/commit/5af8436ef696c59e717c10ab4bfe6ecbfd286782))
+
 ## [4.0.3](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.2...v4.0.3) (2026-10-09)
 
 ### Bug Fixes
