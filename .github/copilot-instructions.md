@@ -81,6 +81,7 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
   - Commits should be atomic and ideally deployable in isolation — all tests, linting, and commitlinting should pass on each individual commit.
   - PRs are merged using a **merge commit** (no squash-merge or rebase-merge). Each commit in the PR history is preserved.
   - To keep branches up to date with the base branch, **rebase** onto it rather than merging it in.
+  - Expect `lib/` conflicts when rebasing (including `--autosquash`) whenever more than one replayed commit rebuilt it. `lib/main/index.js` is a single minified line, so don't hand-merge it or its source map: resolve the source conflicts, run `npm run build`, `git add lib/`, then continue.
   - All changes must go through a **pull request** — no direct commits to master.
 - **Node version:** Pinned to 24 via `.nvmrc`. The action runs using `node24` (set in `action.yml`).
 - **Imports:** Use the `type` keyword for type-only imports (e.g., `import type { Foo } from './bar'`). When importing both types and values from the same module, use a single import with inline `type` (e.g., `import { type Foo, bar } from './baz'`). Imports are ordered alphabetically by module path, grouped as: `node:` built-ins first, then external packages, then local file imports.
