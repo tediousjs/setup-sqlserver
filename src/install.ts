@@ -9,6 +9,7 @@ import {
     downloadExeInstaller,
     downloadSseiInstaller,
     downloadUpdateInstaller,
+    gatherErrorLogs,
     gatherInputs,
     gatherSummaryFiles,
     getOsVersion,
@@ -43,6 +44,35 @@ function findOrDownloadUpdates(config: VersionConfig): Promise<string> {
         return Promise.resolve(joinPaths(toolPath, 'sqlupdate.exe'));
     }
     return downloadUpdateInstaller(config);
+}
+
+/**
+ * Decode the contents of a log file. Unlike the setup logs, the error logs are written as UTF-16LE, so use the
+ * byte order mark to pick the encoding.
+ *
+ * @param {Buffer} content
+ * @returns {string}
+ */
+function decodeLogFile(content: Buffer): string {
+    const encoding = content[0] === 0xff && content[1] === 0xfe ? 'utf-16le' : 'utf-8';
+    return new TextDecoder(encoding).decode(content);
+}
+
+/**
+ * Find log files to output. This runs after the installation, so failing to find them must not hide its outcome.
+ *
+ * @param {string} description
+ * @param {() => Promise<string[]>} find
+ * @returns {Promise<string[]>} The file paths, empty if they couldn't be found
+ */
+async function findLogFiles(description: string, find: () => Promise<string[]>): Promise<string[]> {
+    try {
+        return await find();
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        core.warning(`Unable to find ${description}: ${reason}`);
+        return [];
+    }
 }
 
 export default async function install() {
@@ -185,16 +215,24 @@ export default async function install() {
         throw e;
     } finally {
         // For information purposes, output the summary.txt file
-        // if there was an error, then also fetch the detail.txt file and output that too
-        const files = await gatherSummaryFiles(threw || core.isDebug());
-        // read the files in parallel
-        const contents: [string, Buffer][] = await Promise.all(files.map((path) => readFile(path).then((content): [string, Buffer] => {
+        // if there was an error, then also fetch the detail.txt file and the instance's error logs (which
+        // record why the database engine failed to start) and output those too
+        const withDetail = threw || core.isDebug();
+        const files = await findLogFiles('SQL Server setup logs', () => gatherSummaryFiles(withDetail));
+        if (withDetail) {
+            files.push(...await findLogFiles('SQL Server error logs', () => gatherErrorLogs(instanceName)));
+        }
+        // read the files in parallel, a file that can't be read must not hide the outcome of the install
+        const contents = await Promise.all(files.map((path) => readFile(path).then((content): [string, Buffer] => {
             return [path, content];
+        }, (error: unknown) => {
+            const reason = error instanceof Error ? error.message : String(error);
+            core.warning(`Unable to read ${path}: ${reason}`);
         })));
         // output the files sequentially
-        contents.forEach(([file, content]) => {
+        contents.filter((read) => read !== undefined).forEach(([file, content]) => {
             core.startGroup(basename(file));
-            core.info(content.toString());
+            core.info(decodeLogFile(content));
             core.endGroup();
         });
     }

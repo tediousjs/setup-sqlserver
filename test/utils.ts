@@ -17,7 +17,10 @@ const core = {
         getDetails: mock.fn(),
     },
 };
-const exec = { exec: mock.fn(async () => 0) };
+const exec = {
+    exec: mock.fn(async () => 0),
+    getExecOutput: mock.fn(async () => ({ exitCode: 1, stdout: '', stderr: '' })),
+};
 const tc = {
     downloadTool: mock.fn(async () => `C:/tmp/${randomUUID()}`),
     cacheFile: mock.fn(async () => `C:/tools/${randomUUID()}`),
@@ -60,7 +63,7 @@ function resetAll() {
         core.getInput, core.getMultilineInput, core.getBooleanInput,
         core.info, core.debug, core.warning, core.notice,
         core.startGroup, core.endGroup, core.isDebug, core.platform.getDetails,
-        exec.exec,
+        exec.exec, exec.getExecOutput,
         tc.downloadTool, tc.cacheFile, tc.cacheDir,
         io.mv, globCreate, fetchMock, fetchResponse.text,
         mkdtemp, readdir, generateFileHash, delay,
@@ -71,6 +74,7 @@ function resetAll() {
     core.getBooleanInput.mock.mockImplementation(() => false);
     core.isDebug.mock.mockImplementation(() => false);
     exec.exec.mock.mockImplementation(async () => 0);
+    exec.getExecOutput.mock.mockImplementation(async () => ({ exitCode: 1, stdout: '', stderr: '' }));
     tc.downloadTool.mock.mockImplementation(async () => `C:/tmp/${randomUUID()}`);
     tc.cacheFile.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
     tc.cacheDir.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
@@ -723,6 +727,113 @@ describe('utils', () => {
             const res = await utils.gatherSummaryFiles(true);
             assert.deepEqual(res, ['C:/tmp/summary.txt', 'C:/tmp/2022/details.txt']);
             assert.equal(globCreate.mock.callCount(), 2);
+        });
+    });
+    describe('.gatherErrorLogs()', () => {
+        let globFn: ReturnType<typeof mock.fn>;
+        beforeEach(() => {
+            globFn = mock.fn(async () => [] as string[]);
+            globCreate.mock.mockImplementation(async () => ({ glob: globFn } as any));
+        });
+        it('returns empty array if no files matched', async () => {
+            const res = await utils.gatherErrorLogs('MSSQLSERVER');
+            assert.deepEqual(res, []);
+            assert.equal(core.notice.mock.callCount(), 1);
+            assert.equal(core.notice.mock.calls[0].arguments[0], 'No error logs found');
+        });
+        it('searches the log directory of the instance', async () => {
+            await utils.gatherErrorLogs('MSSQLSERVER');
+            assert.equal(globCreate.mock.callCount(), 1);
+            assert.equal(globCreate.mock.calls[0].arguments[0], 'C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.MSSQLSERVER/MSSQL/Log/ERRORLOG*');
+        });
+        it('returns found files oldest first', async () => {
+            const dir = 'C:/Program Files/Microsoft SQL Server/MSSQL16.MSSQLSERVER/MSSQL/Log';
+            globFn.mock.mockImplementationOnce(async () => [
+                `${dir}/ERRORLOG`,
+                `${dir}/ERRORLOG.1`,
+                `${dir}/ERRORLOG.10`,
+                `${dir}/ERRORLOG.2`,
+            ]);
+            const res = await utils.gatherErrorLogs('MSSQLSERVER');
+            assert.deepEqual(res, [
+                `${dir}/ERRORLOG.10`,
+                `${dir}/ERRORLOG.2`,
+                `${dir}/ERRORLOG.1`,
+                `${dir}/ERRORLOG`,
+            ]);
+            assert.equal(core.notice.mock.callCount(), 0);
+        });
+        describe('with a registered instance', () => {
+            const instanceNamesKey = 'HKLM\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\Instance Names\\SQL';
+            const parametersKey = 'HKLM\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\MSSQL17.MSSQLSERVER\\MSSQLServer\\Parameters';
+            // the instance root contains a lowercase "-e" so that only the -e startup parameter itself can match
+            const logDirectory = 'D:\\sql-engine\\MSSQL17.MSSQLSERVER\\MSSQL\\Log';
+            let parameters: string;
+            beforeEach(() => {
+                parameters = [
+                    '',
+                    `${parametersKey.replace('HKLM', 'HKEY_LOCAL_MACHINE')}`,
+                    '    SQLArg0    REG_SZ    -dD:\\sql-engine\\MSSQL17.MSSQLSERVER\\MSSQL\\DATA\\master.mdf',
+                    `    SQLArg1    REG_SZ    -e${logDirectory}\\ERRORLOG`,
+                    '    SQLArg2    REG_SZ    -lD:\\sql-engine\\MSSQL17.MSSQLSERVER\\MSSQL\\DATA\\mastlog.ldf',
+                    '',
+                ].join('\r\n');
+                exec.getExecOutput.mock.mockImplementation(async (_tool: string, args: string[]) => {
+                    if (args[1] === instanceNamesKey) {
+                        return {
+                            exitCode: 0,
+                            stdout: `\r\n${instanceNamesKey.replace('HKLM', 'HKEY_LOCAL_MACHINE')}\r\n    MSSQLSERVER    REG_SZ    MSSQL17.MSSQLSERVER\r\n\r\n`,
+                            stderr: '',
+                        };
+                    }
+                    if (args[1] === parametersKey) {
+                        return { exitCode: 0, stdout: parameters, stderr: '' };
+                    }
+                    return { exitCode: 1, stdout: '', stderr: 'ERROR: The system was unable to find the specified registry key or value.' };
+                });
+                readdir.mock.mockImplementation(async () => [
+                    'ERRORLOG',
+                    'ERRORLOG.1',
+                    'ERRORLOG.10',
+                    'ERRORLOG.2',
+                    'ERRORLOG.lck',
+                    'SQLAGENT.OUT',
+                    'log_1.trc',
+                ]);
+            });
+            it('reads the error logs from the startup parameters', async () => {
+                const res = await utils.gatherErrorLogs('MSSQLSERVER');
+                assert.deepEqual(res, [
+                    `${logDirectory}\\ERRORLOG.10`,
+                    `${logDirectory}\\ERRORLOG.2`,
+                    `${logDirectory}\\ERRORLOG.1`,
+                    `${logDirectory}\\ERRORLOG`,
+                ]);
+                assert.deepEqual(readdir.mock.calls.map((c) => c.arguments[0]), [logDirectory]);
+                assert.deepEqual(exec.getExecOutput.mock.calls.map((c) => c.arguments), [
+                    ['reg', ['query', instanceNamesKey], { ignoreReturnCode: true, silent: true }],
+                    ['reg', ['query', parametersKey], { ignoreReturnCode: true, silent: true }],
+                ]);
+                assert.equal(globCreate.mock.callCount(), 0);
+            });
+            it('accepts a space after the -e startup parameter', async () => {
+                parameters = parameters.replace('REG_SZ    -e', 'REG_SZ    -e ');
+                const res = await utils.gatherErrorLogs('MSSQLSERVER');
+                assert.equal(res.at(-1), `${logDirectory}\\ERRORLOG`);
+            });
+            it('uses the default location for other instances', async () => {
+                const res = await utils.gatherErrorLogs('OTHER');
+                assert.deepEqual(res, []);
+                assert.equal(exec.getExecOutput.mock.callCount(), 1);
+                assert.equal(globCreate.mock.callCount(), 1);
+                assert.equal(globCreate.mock.calls[0].arguments[0], 'C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.OTHER/MSSQL/Log/ERRORLOG*');
+            });
+            it('uses the default location if the startup parameters have no error log', async () => {
+                parameters = parameters.replace(/^.*SQLArg1.*$/m, '');
+                await utils.gatherErrorLogs('MSSQLSERVER');
+                assert.equal(readdir.mock.callCount(), 0);
+                assert.equal(globCreate.mock.callCount(), 1);
+            });
         });
     });
 });

@@ -27,6 +27,7 @@ const utils = {
     gatherInputs: mock.fn(),
     getOsVersion: mock.fn(async () => 2022 as number | null),
     gatherSummaryFiles: mock.fn(async () => [] as string[]),
+    gatherErrorLogs: mock.fn(async () => [] as string[]),
     downloadExeInstaller: mock.fn(async () => 'C:/tmp/exe/setup.exe'),
     downloadBoxInstaller: mock.fn(async () => 'C:/tmp/box/setup.exe'),
     downloadSseiInstaller: mock.fn(async () => 'C:/tmp/ssei/setup.exe'),
@@ -67,7 +68,7 @@ function resetAllMocks() {
         core.startGroup, core.endGroup, core.group, core.isDebug,
         exec.exec, tc.find, readFile,
         installNativeClient, installOdbc,
-        utils.gatherInputs, utils.getOsVersion, utils.gatherSummaryFiles,
+        utils.gatherInputs, utils.getOsVersion, utils.gatherSummaryFiles, utils.gatherErrorLogs,
         utils.downloadExeInstaller, utils.downloadBoxInstaller,
         utils.downloadSseiInstaller, utils.downloadUpdateInstaller,
         utils.waitForDatabase, utils.downloadTool,
@@ -85,9 +86,11 @@ describe('install', () => {
         core.platform.platform = 'win32';
         exec.exec.mock.mockImplementation(async () => 0);
         tc.find.mock.mockImplementation(() => '');
+        readFile.mock.mockImplementation(async () => Buffer.from(''));
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs());
         utils.getOsVersion.mock.mockImplementation(async () => 2022);
         utils.gatherSummaryFiles.mock.mockImplementation(async () => []);
+        utils.gatherErrorLogs.mock.mockImplementation(async () => []);
         utils.downloadExeInstaller.mock.mockImplementation(async () => 'C:/tmp/exe/setup.exe');
         utils.downloadBoxInstaller.mock.mockImplementation(async () => 'C:/tmp/box/setup.exe');
         utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:/tmp/ssei/setup.exe');
@@ -343,6 +346,97 @@ describe('install', () => {
         assert.equal(utils.gatherSummaryFiles.mock.callCount(), 1);
         assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
         assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'test data'));
+    });
+    it('does not fetch error logs after a successful install', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
+        await install();
+        assert.equal(utils.gatherErrorLogs.mock.callCount(), 0);
+    });
+    it('fetches error logs after the summary files on errors', async () => {
+        readFile.mock.mockImplementation(async (path: string) => Buffer.from(`contents of ${path}`));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt', 'C:/tmp/detail.txt']);
+        utils.gatherErrorLogs.mock.mockImplementation(async () => ['C:/mssql/ERRORLOG.1', 'C:/mssql/ERRORLOG']);
+        exec.exec.mock.mockImplementation(async () => 1);
+        await assert.rejects(() => install(), { message: 'SQL Server setup failed with exit code 1' });
+        assert.equal(utils.gatherErrorLogs.mock.callCount(), 1);
+        assert.equal(utils.gatherErrorLogs.mock.calls[0].arguments[0], 'MSSQLSERVER');
+        assert.deepEqual(core.startGroup.mock.calls.map((c) => c.arguments[0]), [
+            'summary.txt',
+            'detail.txt',
+            'ERRORLOG.1',
+            'ERRORLOG',
+        ]);
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'contents of C:/mssql/ERRORLOG'));
+        assert.equal(core.endGroup.mock.callCount(), 4);
+    });
+    it('fetches error logs during debug', async () => {
+        readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+        utils.gatherErrorLogs.mock.mockImplementation(async () => ['C:/mssql/ERRORLOG']);
+        core.isDebug.mock.mockImplementation(() => true);
+        await install();
+        assert.equal(utils.gatherErrorLogs.mock.callCount(), 1);
+        assert.equal(core.startGroup.mock.calls.at(-1)?.arguments[0], 'ERRORLOG');
+    });
+    it('decodes UTF-16LE log files', async () => {
+        readFile.mock.mockImplementation(async () => Buffer.concat([
+            Buffer.from([0xff, 0xfe]),
+            Buffer.from('Server process ID is 1234.', 'utf16le'),
+        ]));
+        utils.gatherErrorLogs.mock.mockImplementation(async () => ['C:/mssql/ERRORLOG']);
+        exec.exec.mock.mockImplementation(async () => { throw new Error('synthetic error'); });
+        await assert.rejects(() => install(), { message: 'synthetic error' });
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'Server process ID is 1234.'));
+    });
+    for (const error of [new Error('synthetic read error'), 'synthetic read error']) {
+        it(`warns about log files it cannot read with ${typeof error} and outputs the rest`, async () => {
+            readFile.mock.mockImplementation(async (path: string) => {
+                if (path === 'C:/mssql/ERRORLOG') {
+                    throw error;
+                }
+                return Buffer.from('test data');
+            });
+            utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt']);
+            utils.gatherErrorLogs.mock.mockImplementation(async () => ['C:/mssql/ERRORLOG']);
+            exec.exec.mock.mockImplementation(async () => { throw new Error('synthetic error'); });
+            await assert.rejects(() => install(), { message: 'synthetic error' });
+            assert.equal(core.warning.mock.callCount(), 1);
+            assert.equal(core.warning.mock.calls[0].arguments[0], 'Unable to read C:/mssql/ERRORLOG: synthetic read error');
+            assert.deepEqual(core.startGroup.mock.calls.map((c) => c.arguments[0]), ['summary.txt']);
+            assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'test data'));
+        });
+    }
+    for (const error of [new Error('synthetic glob error'), 'synthetic glob error']) {
+        it(`warns about setup logs it cannot find with ${typeof error} and outputs the error logs`, async () => {
+            readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+            utils.gatherSummaryFiles.mock.mockImplementation(async () => { throw error; });
+            utils.gatherErrorLogs.mock.mockImplementation(async () => ['C:/mssql/ERRORLOG']);
+            exec.exec.mock.mockImplementation(async () => { throw new Error('synthetic error'); });
+            await assert.rejects(() => install(), { message: 'synthetic error' });
+            assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Unable to find SQL Server setup logs: synthetic glob error']);
+            assert.deepEqual(core.startGroup.mock.calls.map((c) => c.arguments[0]), ['ERRORLOG']);
+        });
+    }
+    it('warns about error logs it cannot find and outputs the setup logs', async () => {
+        readFile.mock.mockImplementation(async () => Buffer.from('test data'));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => ['C:/tmp/summary.txt']);
+        utils.gatherErrorLogs.mock.mockImplementation(async () => { throw new Error('synthetic registry error'); });
+        exec.exec.mock.mockImplementation(async () => { throw new Error('synthetic error'); });
+        await assert.rejects(() => install(), { message: 'synthetic error' });
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Unable to find SQL Server error logs: synthetic registry error']);
+        assert.deepEqual(core.startGroup.mock.calls.map((c) => c.arguments[0]), ['summary.txt']);
+    });
+    it('still succeeds if it cannot find the setup logs', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
+        utils.gatherSummaryFiles.mock.mockImplementation(async () => { throw new Error('synthetic glob error'); });
+        await install();
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Unable to find SQL Server setup logs: synthetic glob error']);
+    });
+    it('still succeeds if it cannot find the error logs during debug', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
+        core.isDebug.mock.mockImplementation(() => true);
+        utils.gatherErrorLogs.mock.mockImplementation(async () => { throw new Error('synthetic registry error'); });
+        await install();
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Unable to find SQL Server error logs: synthetic registry error']);
     });
     it('installs native client if needed', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false, nativeClientVersion: '11' }));
