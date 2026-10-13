@@ -124,6 +124,8 @@ jobs:
       - buildlint
       - test
     strategy:
+      # let every job finish so a failure on one runner doesn't hide the outcome (and hardware) of the others
+      fail-fast: false
       matrix:
         os: [ 'windows-2022', 'windows-2025' ]
         sqlserver: [ 'sql-latest', 'sql-2025', 'sql-2022', 'sql-2019', 'sql-2017', 'sql-2016' ]
@@ -133,6 +135,27 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # SQL Server can't start on a volume reporting a sector size over 4 KB, so record the runner's hardware to
+      # compare against any setup failures
+      - name: Log runner hardware
+        continue-on-error: true
+        shell: pwsh
+        # write everything straight to the host so it isn't reordered around the output of fsutil
+        run: |
+          try {
+            $vmSize = Invoke-RestMethod -Headers @{ Metadata = 'true' } -TimeoutSec 5 -Uri 'http://169.254.169.254/metadata/instance/compute/vmSize?api-version=2021-02-01&format=text'
+          } catch {
+            $vmSize = "unknown ($_)"
+          }
+          Write-Host "VM size: $vmSize"
+          Write-Host "CPU: $((Get-CimInstance Win32_Processor).Name)"
+          Get-PhysicalDisk | Format-Table -AutoSize FriendlyName, BusType, MediaType, LogicalSectorSize, PhysicalSectorSize | Out-Host
+          $forced = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\stornvme\Parameters\Device' -ErrorAction SilentlyContinue).ForcedPhysicalSectorSizeInBytes
+          Write-Host "ForcedPhysicalSectorSizeInBytes: $(if ($forced) { $forced } else { 'not set' })"
+          foreach ($volume in Get-Volume | Where-Object { $_.DriveLetter -and $_.DriveType -eq 'Fixed' } | Sort-Object DriveLetter) {
+            Write-Host "$($volume.DriveLetter):"
+            fsutil fsinfo sectorinfo "$($volume.DriveLetter):"
+          }
       - name: Install sql server
         uses: ./
         with:
@@ -140,6 +163,15 @@ jobs:
           native-client-version: 11
           odbc-version: 17
           install-updates: true
+      - name: Upload SQL Server logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sqlserver-logs-${{ matrix.os }}-${{ matrix.sqlserver }}-${{ github.run_attempt }}
+          path: |
+            C:/Program Files/Microsoft SQL Server/*/Setup Bootstrap/Log/
+            C:/Program Files/Microsoft SQL Server/MSSQL*/MSSQL/Log/
+          if-no-files-found: ignore
   release:
     name: Release
     concurrency: release
