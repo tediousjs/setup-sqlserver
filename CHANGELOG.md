@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.1.1](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.0...v4.1.1) (2026-10-13)
+
+### Bug Fixes
+
+* output the SQL Server error logs when installation fails ([6ea60ac](https://github.com/tediousjs/setup-sqlserver/commit/6ea60ace825d8f1ebdd881fb87f74d1a0e52bb2e))
+
 ## [4.1.0](https://github.com/tediousjs/setup-sqlserver/compare/v4.0.4...v4.1.0) (2026-10-12)
 
 ### Features
