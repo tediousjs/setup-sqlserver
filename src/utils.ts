@@ -1,5 +1,5 @@
 import { mkdtemp, readdir } from 'node:fs/promises';
-import { basename, extname, dirname, join as joinPaths } from 'node:path';
+import { basename, extname, dirname, join as joinPaths, win32 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
@@ -405,4 +405,87 @@ export async function gatherSummaryFiles(withDetail: boolean = false): Promise<s
             }
         }) : undefined;
     return summaryFiles.concat(detailFile ? [detailFile] : []);
+}
+
+/**
+ * Gather the error logs of an instance. Used after a failed installation to output the reason the Database
+ * Engine did not start, which is recorded here rather than in the setup logs.
+ *
+ * See: https://learn.microsoft.com/en-us/sql/tools/configuration-manager/viewing-the-sql-server-error-log
+ *
+ * @param {string} instanceName
+ * @returns {Promise<string[]>} The file paths, oldest log first
+ */
+export async function gatherErrorLogs(instanceName: string): Promise<string[]> {
+    // Each start of the engine moves the previous logs along to ERRORLOG.1, ERRORLOG.2, etc. Setup records where the
+    // current log is in the instance's startup parameters, which accounts for custom instance or data directories.
+    // Otherwise, glob the default instance directory, which includes the major version (eg: MSSQL16.MSSQLSERVER).
+    const errorLogPath = await findErrorLogPath(instanceName);
+    let errorLogs: string[];
+    if (errorLogPath) {
+        const logDirectory = win32.dirname(errorLogPath);
+        const logName = win32.basename(errorLogPath);
+        errorLogs = (await readdir(logDirectory))
+            .filter((file) => file.startsWith(logName) && /^(\.\d+)?$/.test(file.slice(logName.length)))
+            .map((file) => win32.join(logDirectory, file));
+    } else {
+        errorLogs = await glob.create(`C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.${instanceName}/MSSQL/Log/ERRORLOG*`)
+            .then((globber) => globber.glob());
+    }
+    if (errorLogs.length) {
+        core.debug(`Found error logs: ${errorLogs.join(', ')}`);
+    } else {
+        core.notice('No error logs found');
+    }
+    // order the logs so that the one from the most recent start of the engine comes last
+    const generation = (path: string) => Number(win32.extname(path).slice(1));
+    return errorLogs.sort((a, b) => generation(b) - generation(a));
+}
+
+/**
+ * Find the path of an instance's current error log from the startup parameters that setup records for it.
+ *
+ * See: https://learn.microsoft.com/en-us/sql/database-engine/configure-windows/database-engine-service-startup-options
+ *
+ * @param {string} instanceName
+ * @returns {Promise<string | undefined>} The path, if the instance has been registered
+ */
+async function findErrorLogPath(instanceName: string): Promise<string | undefined> {
+    const instanceIds = await queryRegistry('HKLM\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\Instance Names\\SQL');
+    const instanceId = instanceIds.get(instanceName);
+    if (!instanceId) {
+        return undefined;
+    }
+    const parameters = await queryRegistry(`HKLM\\SOFTWARE\\Microsoft\\Microsoft SQL Server\\${instanceId}\\MSSQLServer\\Parameters`);
+    // the parameters are stored as SQLArg0, SQLArg1, etc. and the error log is the one starting -e
+    for (const parameter of parameters.values()) {
+        const [, errorLogPath] = parameter.match(/^-e\s*(.+)$/) ?? [];
+        if (errorLogPath) {
+            return errorLogPath;
+        }
+    }
+}
+
+/**
+ * Read the values of a registry key.
+ *
+ * @param {string} key
+ * @returns {Promise<Map<string, string>>} The value names and their data, empty if the key doesn't exist
+ */
+async function queryRegistry(key: string): Promise<Map<string, string>> {
+    const { exitCode, stdout } = await exec.getExecOutput('reg', ['query', key], {
+        ignoreReturnCode: true,
+        silent: true,
+    });
+    const values = new Map<string, string>();
+    if (exitCode === 0) {
+        // values are listed beneath the key as "<name>    <type>    <data>"
+        for (const line of stdout.split(/\r?\n/)) {
+            const [, name, data] = line.match(/^\s+(\S+)\s+REG_\w+\s+(.*?)\s*$/) ?? [];
+            if (name) {
+                values.set(name, data);
+            }
+        }
+    }
+    return values;
 }
