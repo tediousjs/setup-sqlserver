@@ -153,6 +153,46 @@ describe('install', () => {
         assert.equal(call.arguments[0], '"C:\\tmp\\box\\setup.exe"');
         assert.deepEqual(call.arguments[2], { windowsVerbatimArguments: true, ignoreReturnCode: true });
     });
+    for (const [version, setupPath] of [
+        ['ssei', 'C:\\tmp\\ssei\\setup.exe'],
+        ['box', 'C:\\tmp\\box\\setup.exe'],
+        ['exe', 'C:\\tmp\\exe\\setup.exe'],
+    ] as const) {
+        it(`passes the full argument list to setup for a ${version} install`, async () => {
+            VERSIONS.set(version, { ...VERSIONS.get(version)!, installArgs: ['/ENABLERANU=1'] });
+            utils.gatherInputs.mock.mockImplementation(() => defaultInputs({
+                version,
+                password: 'An0ther-Passw0rd',
+                collation: 'Latin1_General_100_CS_AS_SC_UTF8',
+                installArgs: ['/SQLTEMPDBFILECOUNT=4'],
+                installUpdates: true,
+            }));
+            utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:\\tmp\\update\\sqlupdate.exe');
+            await install();
+            assert.equal(exec.exec.mock.callCount(), 1);
+            assert.deepEqual(exec.exec.mock.calls[0].arguments, [
+                `"${setupPath}"`,
+                [
+                    '/q',
+                    '/ACTION=Install',
+                    '/FEATURES=SQLEngine',
+                    '/INSTANCENAME=MSSQLSERVER',
+                    '/SQLSYSADMINACCOUNTS="BUILTIN\\ADMINISTRATORS"',
+                    '/TCPENABLED=1',
+                    '/NPENABLED=0',
+                    '/SQLCOLLATION="Latin1_General_100_CS_AS_SC_UTF8"',
+                    '/SECURITYMODE=SQL',
+                    '/SAPWD="An0ther-Passw0rd"',
+                    '/IACCEPTSQLSERVERLICENSETERMS',
+                    '/ENABLERANU=1',
+                    '/SQLTEMPDBFILECOUNT=4',
+                    '/UPDATEENABLED=1',
+                    '/UpdateSource="C:\\tmp\\update"',
+                ],
+                { windowsVerbatimArguments: true, ignoreReturnCode: true },
+            ]);
+        });
+    }
     it('warns and waits for the database if setup requests a reboot', async () => {
         exec.exec.mock.mockImplementation(async () => 3010);
         await install();
