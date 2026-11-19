@@ -331,6 +331,14 @@ describe('install', () => {
         await install();
         assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:\\tmp\\exe\\setup.exe"');
     });
+    it('skips os checks on a platform other than Windows when needed', async () => {
+        core.platform.platform = 'linux';
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ version: 'maxOs', skipOsCheck: true }));
+        await install();
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'Skipping OS checks'));
+        assert.equal(exec.exec.mock.callCount(), 1);
+        assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:\\tmp\\exe\\setup.exe"');
+    });
     it('waits for max of 10 attempts', async () => {
         const original = globalThis.setTimeout;
         (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
