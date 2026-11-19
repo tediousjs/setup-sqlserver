@@ -96,7 +96,7 @@ only warning as it does after a normal install.
 
 ```yml
 - name: Install SQL Server
-  uses: ./
+  uses: tediousjs/setup-sqlserver@v4
   with:
     sqlserver-version: sql-latest
 ```
