@@ -1,7 +1,13 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+// static imports bind before the mock.module() calls below, so this is the real readFile
+import { readFile } from 'node:fs/promises';
 import { win32 } from 'node:path';
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { load } from 'js-yaml';
+import type { Inputs } from '../src/utils.ts';
+
+const action = load(await readFile(new URL('../action.yml', import.meta.url), 'utf8')) as { inputs: Record<string, unknown> };
 
 const core = {
     getInput: mock.fn(() => ''),
@@ -205,6 +211,66 @@ describe('utils', () => {
             setupInputs({ 'sqlserver-version': '' });
             const res = utils.gatherInputs();
             assert.equal(res.version, '2025');
+        });
+        describe('with the inputs in action.yml', () => {
+            // each input has a different value, so a misspelt or swapped input name changes the result
+            const stringInputs: Record<string, string> = {
+                'sqlserver-version': 'sql-2019',
+                'sa-password': 'An0ther-Passw0rd',
+                'db-collation': 'Latin1_General_100_CS_AS_SC_UTF8',
+                'native-client-version': '11',
+                'odbc-version': '18',
+            };
+            const multilineInputs: Record<string, string[]> = {
+                'install-arguments': ['/SQLTEMPDBFILECOUNT=4', '/SQLTEMPDBFILESIZE=64'],
+            };
+            const booleanInputs = {
+                'wait-for-ready': 'wait',
+                'skip-os-check': 'skipOsCheck',
+                'install-updates': 'installUpdates',
+            } satisfies Record<string, keyof Inputs>;
+            beforeEach(() => {
+                core.getInput.mock.mockImplementation((name: string) => stringInputs[name] ?? '');
+                core.getMultilineInput.mock.mockImplementation((name: string) => multilineInputs[name] ?? []);
+                core.getBooleanInput.mock.mockImplementation(() => false);
+            });
+            it('reads every input in action.yml', () => {
+                utils.gatherInputs();
+                const names = (fn: { mock: { calls: { arguments: unknown[] }[] } }) => fn.mock.calls.map((c) => c.arguments[0]).sort();
+                assert.deepEqual(names(core.getInput), Object.keys(stringInputs).sort());
+                assert.deepEqual(names(core.getMultilineInput), Object.keys(multilineInputs).sort());
+                assert.deepEqual(names(core.getBooleanInput), Object.keys(booleanInputs).sort());
+                assert.deepEqual([
+                    ...names(core.getInput),
+                    ...names(core.getMultilineInput),
+                    ...names(core.getBooleanInput),
+                ].sort(), Object.keys(action.inputs).sort());
+            });
+            it('maps each string input to its field', () => {
+                assert.deepEqual(utils.gatherInputs(), {
+                    version: '2019',
+                    password: 'An0ther-Passw0rd',
+                    collation: 'Latin1_General_100_CS_AS_SC_UTF8',
+                    installArgs: ['/SQLTEMPDBFILECOUNT=4', '/SQLTEMPDBFILESIZE=64'],
+                    wait: false,
+                    skipOsCheck: false,
+                    nativeClientVersion: '11',
+                    odbcVersion: '18',
+                    installUpdates: false,
+                });
+            });
+            for (const [name, field] of Object.entries(booleanInputs)) {
+                it(`maps ${name} to ${field}`, () => {
+                    core.getBooleanInput.mock.mockImplementation((input: string) => input === name);
+                    const { wait, skipOsCheck, installUpdates } = utils.gatherInputs();
+                    assert.deepEqual({ wait, skipOsCheck, installUpdates }, {
+                        wait: false,
+                        skipOsCheck: false,
+                        installUpdates: false,
+                        [field]: true,
+                    });
+                });
+            }
         });
     });
     describe('.downloadTool()', () => {
