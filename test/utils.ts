@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { win32 } from 'node:path';
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -22,9 +23,9 @@ const exec = {
     getExecOutput: mock.fn(async () => ({ exitCode: 1, stdout: '', stderr: '' })),
 };
 const tc = {
-    downloadTool: mock.fn(async () => `C:/tmp/${randomUUID()}`),
-    cacheFile: mock.fn(async () => `C:/tools/${randomUUID()}`),
-    cacheDir: mock.fn(async () => `C:/tools/${randomUUID()}`),
+    downloadTool: mock.fn(async () => `C:\\tmp\\${randomUUID()}`),
+    cacheFile: mock.fn(async () => `C:\\tools\\${randomUUID()}`),
+    cacheDir: mock.fn(async () => `C:\\tools\\${randomUUID()}`),
 };
 const io = { mv: mock.fn(async () => {}) };
 const globCreate = mock.fn(async () => ({ glob: async () => [] as string[] }));
@@ -53,6 +54,7 @@ mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/io', { namedExports: io });
 mock.module('@actions/glob', { namedExports: glob });
 mock.module('node:fs/promises', { namedExports: { mkdtemp, readdir } });
+mock.module('node:path', { namedExports: { ...win32 }, defaultExport: win32 });
 mock.module('node:timers/promises', { namedExports: { setTimeout: delay } });
 mock.module('../src/crypto.ts', { namedExports: { generateFileHash } });
 
@@ -75,9 +77,9 @@ function resetAll() {
     core.isDebug.mock.mockImplementation(() => false);
     exec.exec.mock.mockImplementation(async () => 0);
     exec.getExecOutput.mock.mockImplementation(async () => ({ exitCode: 1, stdout: '', stderr: '' }));
-    tc.downloadTool.mock.mockImplementation(async () => `C:/tmp/${randomUUID()}`);
-    tc.cacheFile.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
-    tc.cacheDir.mock.mockImplementation(async () => `C:/tools/${randomUUID()}`);
+    tc.downloadTool.mock.mockImplementation(async () => `C:\\tmp\\${randomUUID()}`);
+    tc.cacheFile.mock.mockImplementation(async () => `C:\\tools\\${randomUUID()}`);
+    tc.cacheDir.mock.mockImplementation(async () => `C:\\tools\\${randomUUID()}`);
     io.mv.mock.mockImplementation(async () => {});
     globCreate.mock.mockImplementation(async () => ({ glob: async () => [] }));
     fetchResponse.ok = true;
@@ -208,15 +210,15 @@ describe('utils', () => {
     describe('.downloadTool()', () => {
         it('downloads the tool', async () => {
             const fileName = randomUUID();
-            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:\\path\\to\\${fileName}`);
             const res = await utils.downloadTool('https://example.com/setup.exe');
-            assert.equal(res, `C:/path/to/${fileName}.exe`);
+            assert.equal(res, `C:\\path\\to\\${fileName}.exe`);
         });
         it('downloads the tool with custom extension', async () => {
             const fileName = randomUUID();
-            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:\\path\\to\\${fileName}`);
             const res = await utils.downloadTool('https://example.com/setup.exe', '.html');
-            assert.equal(res, `C:/path/to/${fileName}.html`);
+            assert.equal(res, `C:\\path\\to\\${fileName}.html`);
         });
     });
     describe('.waitForDatabase()', () => {
@@ -241,36 +243,36 @@ describe('utils', () => {
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
         });
         it('extracts into an isolated directory before caching', async () => {
-            tc.downloadTool.mock.mockImplementation(async () => 'C:/runner temp/installer');
-            tc.cacheDir.mock.mockImplementation(async () => 'C:/tools/sqlserver/2022');
+            tc.downloadTool.mock.mockImplementation(async () => 'C:\\runner temp\\installer');
+            tc.cacheDir.mock.mockImplementation(async () => 'C:\\tools\\sqlserver\\2022');
             const res = await utils.downloadBoxInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
             });
-            assert.equal(res, 'C:/tools/sqlserver/2022/setup.exe');
-            assert.deepEqual(mkdtemp.mock.calls[0].arguments, ['C:/runner temp/sqlserver-setup-']);
+            assert.equal(res, 'C:\\tools\\sqlserver\\2022\\setup.exe');
+            assert.deepEqual(mkdtemp.mock.calls[0].arguments, ['C:\\runner temp\\sqlserver-setup-']);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
-                '"C:/runner temp/installer.exe"',
-                ['/qs', '/x:"C:/runner temp/sqlserver-setup-unique"'],
-                { cwd: 'C:/runner temp', windowsVerbatimArguments: true },
+                '"C:\\runner temp\\installer.exe"',
+                ['/qs', '/x:"C:\\runner temp\\sqlserver-setup-unique"'],
+                { cwd: 'C:\\runner temp', windowsVerbatimArguments: true },
             ]);
-            assert.deepEqual(readdir.mock.calls[0].arguments, ['C:/runner temp/sqlserver-setup-unique']);
+            assert.deepEqual(readdir.mock.calls[0].arguments, ['C:\\runner temp\\sqlserver-setup-unique']);
             assert.deepEqual(tc.cacheDir.mock.calls[0].arguments, [
-                'C:/runner temp/sqlserver-setup-unique', 'sqlserver', '2022.0.0', undefined,
+                'C:\\runner temp\\sqlserver-setup-unique', 'sqlserver', '2022.0.0', undefined,
             ]);
         });
         it('fails without caching if extraction does not produce setup.exe', async () => {
-            tc.downloadTool.mock.mockImplementation(async () => 'C:/runner temp/installer');
+            tc.downloadTool.mock.mockImplementation(async () => 'C:\\runner temp\\installer');
             readdir.mock.mockImplementation(async () => ['readme.txt']);
             await assert.rejects(() => utils.downloadBoxInstaller({
                 exeUrl: 'https://example.com/installer.exe',
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
-            }), { message: 'Extracting the SQL Server 2022 installer did not produce setup.exe in C:/runner temp/sqlserver-setup-unique (found: readme.txt)' });
+            }), { message: 'Extracting the SQL Server 2022 installer did not produce setup.exe in C:\\runner temp\\sqlserver-setup-unique (found: readme.txt)' });
             assert.equal(tc.cacheDir.mock.callCount(), 0);
         });
         it('accepts an extracted SETUP.EXE regardless of case', async () => {
@@ -280,7 +282,7 @@ describe('utils', () => {
                 boxUrl: 'https://example.com/installer.box',
                 version: '2022',
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
             assert.equal(tc.cacheDir.mock.callCount(), 1);
         });
         it('throws if no boxUrl', async () => {
@@ -297,7 +299,7 @@ describe('utils', () => {
                 version: '2022',
             });
             const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got setup file'));
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
             assert.equal(calls.length, 2);
             assert.match(String(calls[0].arguments[0]), /^Got setup file \(exe\) with hash SHA256=/);
             assert.match(String(calls[1].arguments[0]), /^Got setup file \(box\) with hash SHA256=/);
@@ -309,7 +311,7 @@ describe('utils', () => {
                 exeUrl: 'https://example.com/installer.exe',
                 version: '2022',
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
             assert.deepEqual(tc.cacheFile.mock.calls[0].arguments.slice(1), ['setup.exe', 'sqlserver', '2022.0.0', undefined]);
         });
         it('throws if boxUrl', async () => {
@@ -328,12 +330,12 @@ describe('utils', () => {
             const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got setup file'));
             assert.equal(calls.length, 1);
             assert.match(String(calls[0].arguments[0]), /^Got setup file \(exe\) with hash SHA256=/);
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
         });
     });
     describe('.downloadSseiInstaller()', () => {
         beforeEach(() => {
-            tc.downloadTool.mock.mockImplementation(async () => `C:/tmp/${randomUUID()}.exe`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:\\tmp\\${randomUUID()}.exe`);
             readdir.mock.mockImplementation(mediaFiles(['SQLServer2025-x64-ENU.exe', 'SQLServer2025-x64-ENU.box']));
         });
         it('returns a path to an exe', async () => {
@@ -341,46 +343,46 @@ describe('utils', () => {
                 sseiUrl: 'https://example.com/ssei.exe',
                 version: '2025',
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
         });
         it('downloads into an isolated directory and quotes media paths with spaces', async () => {
-            tc.downloadTool.mock.mockImplementation(async () => 'C:/runner temp/bootstrapper');
-            tc.cacheDir.mock.mockImplementation(async () => 'C:/tools/sqlserver/2025');
+            tc.downloadTool.mock.mockImplementation(async () => 'C:\\runner temp\\bootstrapper');
+            tc.cacheDir.mock.mockImplementation(async () => 'C:\\tools\\sqlserver\\2025');
             const res = await utils.downloadSseiInstaller({
                 sseiUrl: 'https://example.com/ssei.exe',
                 version: '2025',
             });
-            assert.equal(res, 'C:/tools/sqlserver/2025/setup.exe');
+            assert.equal(res, 'C:\\tools\\sqlserver\\2025\\setup.exe');
             assert.deepEqual(mkdtemp.mock.calls.map((c) => c.arguments), [
-                ['C:/runner temp/sqlserver-media-'],
-                ['C:/runner temp/sqlserver-media-unique/sqlserver-setup-'],
+                ['C:\\runner temp\\sqlserver-media-'],
+                ['C:\\runner temp\\sqlserver-media-unique\\sqlserver-setup-'],
             ]);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
-                '"C:/runner temp/bootstrapper.exe"',
+                '"C:\\runner temp\\bootstrapper.exe"',
                 [
                     '/Action=Download',
-                    '/MediaPath="C:/runner temp/sqlserver-media-unique"',
+                    '/MediaPath="C:\\runner temp\\sqlserver-media-unique"',
                     '/MediaType=CAB',
                     '/Quiet',
                     '/Language=en-US',
                 ],
                 { windowsVerbatimArguments: true },
             ]);
-            assert.deepEqual(readdir.mock.calls[0].arguments, ['C:/runner temp/sqlserver-media-unique']);
+            assert.deepEqual(readdir.mock.calls[0].arguments, ['C:\\runner temp\\sqlserver-media-unique']);
             assert.deepEqual(exec.exec.mock.calls[1].arguments, [
-                '"C:/runner temp/sqlserver-media-unique/SQLServer2025-x64-ENU.exe"',
-                ['/qs', '/x:"C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique"'],
-                { cwd: 'C:/runner temp/sqlserver-media-unique', windowsVerbatimArguments: true },
+                '"C:\\runner temp\\sqlserver-media-unique\\SQLServer2025-x64-ENU.exe"',
+                ['/qs', '/x:"C:\\runner temp\\sqlserver-media-unique\\sqlserver-setup-unique"'],
+                { cwd: 'C:\\runner temp\\sqlserver-media-unique', windowsVerbatimArguments: true },
             ]);
-            assert.deepEqual(readdir.mock.calls[1].arguments, ['C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique']);
+            assert.deepEqual(readdir.mock.calls[1].arguments, ['C:\\runner temp\\sqlserver-media-unique\\sqlserver-setup-unique']);
             assert.deepEqual(tc.cacheDir.mock.calls[0].arguments, [
-                'C:/runner temp/sqlserver-media-unique/sqlserver-setup-unique', 'sqlserver', '2025.0.0', undefined,
+                'C:\\runner temp\\sqlserver-media-unique\\sqlserver-setup-unique', 'sqlserver', '2025.0.0', undefined,
             ]);
         });
         it('recognizes uppercase executable extensions', async () => {
             readdir.mock.mockImplementation(mediaFiles(['SQLServer2025-x64-ENU.EXE']));
             await utils.downloadSseiInstaller({ sseiUrl: 'https://example.com/ssei.exe', version: '2025' });
-            assert.equal(exec.exec.mock.calls[1].arguments[0], '"C:/tmp/sqlserver-media-unique/SQLServer2025-x64-ENU.EXE"');
+            assert.equal(exec.exec.mock.calls[1].arguments[0], '"C:\\tmp\\sqlserver-media-unique\\SQLServer2025-x64-ENU.EXE"');
         });
         it('rejects ambiguous installer media without extracting or caching it', async () => {
             readdir.mock.mockImplementation(mediaFiles(['first.exe', 'second.exe']));
@@ -420,7 +422,7 @@ describe('utils', () => {
                 await assert.rejects(() => utils.downloadSseiInstaller({
                     sseiUrl: 'https://example.com/ssei.exe',
                     version: '2025',
-                }), { message: `SSEI bootstrapper did not produce an installer exe in C:/tmp/sqlserver-media-unique (found: ${found})` });
+                }), { message: `SSEI bootstrapper did not produce an installer exe in C:\\tmp\\sqlserver-media-unique (found: ${found})` });
                 assert.equal(tc.cacheDir.mock.callCount(), 0);
             });
         }
@@ -433,7 +435,7 @@ describe('utils', () => {
             const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got SSEI bootstrapper'));
             assert.equal(calls.length, 1);
             assert.match(String(calls[0].arguments[0]), /^Got SSEI bootstrapper with hash SHA256=/);
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/setup\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\setup\.exe$/);
         });
     });
     describe('.downloadUpdateInstaller()', () => {
@@ -463,7 +465,7 @@ describe('utils', () => {
                 version: '2022',
                 updateUrl: 'https://example.com/where-are-updates.html',
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\sqlupdate\.exe$/);
             assert.deepEqual(tc.cacheFile.mock.calls[0].arguments.slice(1), ['sqlupdate.exe', 'sqlupdate', '2022.0.0', undefined]);
         });
         it('throws if no update url', async () => {
@@ -483,7 +485,7 @@ describe('utils', () => {
             const calls = core.debug.mock.calls.filter((c) => String(c.arguments[0]).startsWith('Got update file'));
             assert.equal(calls.length, 1);
             assert.match(String(calls[0].arguments[0]), /^Got update file with hash SHA256=/);
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\sqlupdate\.exe$/);
         });
         it('uses an .exe url directly', async () => {
             const directUrl = 'https://download.microsoft.com/download/a/7/7/a77b5753-8fe7-4804-bfc5-591d9a626c98/SQLServer2016SP3-KB5003279-x64-ENU.exe';
@@ -492,7 +494,7 @@ describe('utils', () => {
                 version: '2016',
                 updateUrl: directUrl,
             });
-            assert.match(res, /^C:\/tools\/[a-f0-9-]*\/sqlupdate\.exe$/);
+            assert.match(res, /^C:\\tools\\[a-f0-9-]*\\sqlupdate\.exe$/);
             assert.equal(fetchMock.mock.callCount(), 0);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], directUrl);
         });
@@ -503,7 +505,7 @@ describe('utils', () => {
             assert.equal(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/.test(body), false);
             fetchResponse.text.mock.mockImplementation(async () => body);
             const res = await utils.downloadUpdateInstaller(config);
-            assert.match(res, /\/sqlupdate\.exe$/);
+            assert.match(res, /\\sqlupdate\.exe$/);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
         it('supports Microsoft pages containing both metadata and a legacy link', async () => {

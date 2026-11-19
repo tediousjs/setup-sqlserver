@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { win32 } from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -8,8 +9,8 @@ const core = {
 };
 const tc = {
     find: mock.fn(() => ''),
-    downloadTool: mock.fn(async () => 'C:/tmp/installer'),
-    cacheFile: mock.fn(async () => 'C:/cache/installer'),
+    downloadTool: mock.fn(async () => 'C:\\tmp\\installer'),
+    cacheFile: mock.fn(async () => 'C:\\cache\\installer'),
 };
 const io = { mv: mock.fn(async () => {}) };
 const exec = { exec: mock.fn(async () => 0) };
@@ -18,6 +19,7 @@ mock.module('@actions/core', { namedExports: core });
 mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/io', { namedExports: io });
 mock.module('@actions/exec', { namedExports: exec });
+mock.module('node:path', { namedExports: { ...win32 }, defaultExport: win32 });
 
 const { MsiInstaller } = await import('../../src/installers/index.ts');
 
@@ -27,8 +29,8 @@ describe('MsiInstaller', () => {
             fn.mock.resetCalls();
         }
         tc.find.mock.mockImplementation(() => '');
-        tc.cacheFile.mock.mockImplementation(async () => 'C:/cache/installer');
-        tc.downloadTool.mock.mockImplementation(async () => 'C:/tmp/installer');
+        tc.cacheFile.mock.mockImplementation(async () => 'C:\\cache\\installer');
+        tc.downloadTool.mock.mockImplementation(async () => 'C:\\tmp\\installer');
         io.mv.mock.mockImplementation(async () => {});
         exec.exec.mock.mockImplementation(async () => 0);
     });
@@ -138,7 +140,7 @@ describe('MsiInstaller', () => {
             });
         }
         it('returns a cached path if found', async () => {
-            tc.find.mock.mockImplementation(() => 'C:/cache/test/x86');
+            tc.find.mock.mockImplementation(() => 'C:\\cache\\test\\x86');
             const installer = new MsiInstaller({
                 name: 'test',
                 version: '1.0.0',
@@ -150,7 +152,7 @@ describe('MsiInstaller', () => {
             assert.equal(exec.exec.mock.callCount(), 1);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', '"C:/cache/test/x86/test.msi"'],
+                ['/passive', '/i', '"C:\\cache\\test\\x86\\test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -165,7 +167,7 @@ describe('MsiInstaller', () => {
             assert.equal(tc.cacheFile.mock.callCount(), 1);
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', '"C:/cache/installer/test.msi"'],
+                ['/passive', '/i', '"C:\\cache\\installer\\test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -180,7 +182,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', '"C:/cache/installer/test.msi"', `APPGUID={${appGuid}}`],
+                ['/passive', '/i', '"C:\\cache\\installer\\test.msi"', `APPGUID={${appGuid}}`],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -194,7 +196,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/i', '"C:/cache/installer/test.msi"'],
+                ['/i', '"C:\\cache\\installer\\test.msi"'],
                 { windowsVerbatimArguments: true },
             ]);
         });
@@ -208,7 +210,7 @@ describe('MsiInstaller', () => {
             await installer.install();
             assert.deepEqual(exec.exec.mock.calls[0].arguments, [
                 'msiexec',
-                ['/passive', '/i', '"C:/cache/installer/test.msi"', 'REINSTALL="ALL"'],
+                ['/passive', '/i', '"C:\\cache\\installer\\test.msi"', 'REINSTALL="ALL"'],
                 { windowsVerbatimArguments: true },
             ]);
         });

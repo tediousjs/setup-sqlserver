@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { win32 } from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -8,15 +9,16 @@ const core = {
 };
 const tc = {
     find: mock.fn(() => ''),
-    downloadTool: mock.fn(async () => 'C:/tmp/installer'),
-    cacheFile: mock.fn(async () => 'C:/cache/installer'),
-    cacheDir: mock.fn(async () => 'C:/cache/installer'),
+    downloadTool: mock.fn(async () => 'C:\\tmp\\installer'),
+    cacheFile: mock.fn(async () => 'C:\\cache\\installer'),
+    cacheDir: mock.fn(async () => 'C:\\cache\\installer'),
 };
 const io = { mv: mock.fn(async () => {}) };
 
 mock.module('@actions/core', { namedExports: core });
 mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/io', { namedExports: io });
+mock.module('node:path', { namedExports: { ...win32 }, defaultExport: win32 });
 
 const { Installer } = await import('../../src/installers/installer.ts');
 
@@ -67,15 +69,15 @@ describe('Installer', () => {
     describe('.downloadInstaller()', () => {
         it('downloads the tool', async () => {
             const fileName = randomUUID();
-            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:\\path\\to\\${fileName}`);
             const res = await new TestInstaller({ name: 'test', version: '1.0.0' }).downloadInstaller('https://example.com/setup.exe');
-            assert.equal(res, `C:/path/to/${fileName}.exe`);
+            assert.equal(res, `C:\\path\\to\\${fileName}.exe`);
         });
         it('downloads the tool with custom extension', async () => {
             const fileName = randomUUID();
-            tc.downloadTool.mock.mockImplementation(async () => `C:/path/to/${fileName}`);
+            tc.downloadTool.mock.mockImplementation(async () => `C:\\path\\to\\${fileName}`);
             const res = await new TestInstaller({ name: 'test', version: '1.0.0' }).downloadInstaller('https://example.com/setup.exe', '.html');
-            assert.equal(res, `C:/path/to/${fileName}.html`);
+            assert.equal(res, `C:\\path\\to\\${fileName}.html`);
         });
     });
 });
