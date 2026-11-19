@@ -357,6 +357,13 @@ describe('utils', () => {
                 version: '2016',
             }), { message: 'No boxUrl provided' });
         });
+        it('throws if no exeUrl', async () => {
+            await assert.rejects(() => utils.downloadBoxInstaller({
+                boxUrl: 'https://example.com/installer.box',
+                version: '2022',
+            }), { message: 'No exeUrl provided' });
+            assert.equal(tc.downloadTool.mock.callCount(), 0);
+        });
         it('calculates digests in debug mode', async () => {
             core.isDebug.mock.mockImplementation(() => true);
             const res = await utils.downloadBoxInstaller({
@@ -386,6 +393,12 @@ describe('utils', () => {
                 boxUrl: 'https://example.com/installer.box',
                 version: '2016',
             }), { message: 'Version requires box installer' });
+        });
+        it('throws if no exeUrl', async () => {
+            await assert.rejects(() => utils.downloadExeInstaller({
+                version: '2022',
+            }), { message: 'No exeUrl provided' });
+            assert.equal(tc.downloadTool.mock.callCount(), 0);
         });
         it('calculates digests in debug mode', async () => {
             core.isDebug.mock.mockImplementation(() => true);
