@@ -50,6 +50,15 @@ See [action.yml](./action.yml):
 ```
 <!-- end usage -->
 
+### Outputs
+
+<!-- start outputs -->
+| Output | Description |
+| --- | --- |
+| `sa-password` | The SA password, this will be the same as the input, but can be useful when relying on the default value. |
+| `instance-name` | The instance name for the SQL Server. |
+<!-- end outputs -->
+
 ### SA password
 
 The default `sa-password`, `yourStrong(!)Password`, is public. The action

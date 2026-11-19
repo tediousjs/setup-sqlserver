@@ -6,6 +6,7 @@ import { after, before, describe, it } from 'node:test';
 import * as yaml from 'js-yaml';
 import {
     type ActionMetadata,
+    renderOutputs,
     renderUsage,
     replaceSection,
     updateReadme,
@@ -56,6 +57,29 @@ describe('generate-docs', () => {
             assert.throws(() => renderUsage('', { inputs: {}, outputs: {} }), /actionReference must not be empty/);
         });
     });
+    describe('renderOutputs()', () => {
+        const header = ['| Output | Description |', '| --- | --- |'];
+        it('renders one row for each output in the real action.yml', async () => {
+            const actionPath = path.join(import.meta.dirname, '..', '..', 'action.yml');
+            const action = yaml.load(await fs.readFile(actionPath, 'utf8')) as ActionMetadata;
+            const names = Object.keys(action.outputs ?? {});
+            assert.ok(names.length > 0);
+            const lines = renderOutputs(action);
+            assert.deepEqual(lines.slice(0, 2), header);
+            assert.equal(lines.length, header.length + names.length);
+            names.forEach((name, i) => assert.ok(lines[header.length + i].startsWith(`| \`${name}\` | `), lines[header.length + i]));
+        });
+        it('escapes pipes and joins lines in descriptions', () => {
+            assert.deepEqual(renderOutputs({
+                inputs: {},
+                outputs: { result: { description: 'Either a | b.\nOr c.\n' } },
+            }), [...header, '| `result` | Either a \\| b. Or c. |']);
+        });
+        it('renders only the header when there are no outputs', () => {
+            assert.deepEqual(renderOutputs({ inputs: {} }), header);
+            assert.deepEqual(renderOutputs({ inputs: {}, outputs: {} }), header);
+        });
+    });
     describe('replaceSection()', () => {
         const start = '<!-- start test -->';
         const end = '<!-- end test -->';
@@ -84,7 +108,7 @@ describe('generate-docs', () => {
         after(async () => {
             await fs.rm(dir, { recursive: true, force: true });
         });
-        it('regenerates the usage section and gives the same file when run again', async () => {
+        it('regenerates the usage and outputs sections and gives the same file when run again', async () => {
             const actionPath = path.join(dir, 'action.yml');
             const readmePath = path.join(dir, 'README.md');
             await fs.writeFile(actionPath, [
@@ -95,12 +119,19 @@ describe('generate-docs', () => {
                 '  verbose:',
                 '    description: \'Log more.\'',
                 '    default: \'false\'',
+                'outputs:',
+                '  path:',
+                '    description: \'The install path.\'',
             ].join('\n'));
             await fs.writeFile(readmePath, [
                 '# Title',
                 '<!-- start usage -->',
                 'stale',
                 '<!-- end usage -->',
+                'Middle',
+                '<!-- start outputs -->',
+                'stale',
+                '<!-- end outputs -->',
                 'Footer',
             ].join(os.EOL));
 
@@ -121,6 +152,12 @@ describe('generate-docs', () => {
                 '    verbose: false',
                 '```',
                 '<!-- end usage -->',
+                'Middle',
+                '<!-- start outputs -->',
+                '| Output | Description |',
+                '| --- | --- |',
+                '| `path` | The install path. |',
+                '<!-- end outputs -->',
                 'Footer',
             ].join(os.EOL));
 

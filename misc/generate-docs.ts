@@ -38,7 +38,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //
 // SUMMARY
 //
-// This script rebuilds the usage section in the README.md to be consistent with the action.yml
+// This script rebuilds the usage and outputs sections in the README.md to be consistent with the action.yml
 
 export interface ActionInput {
     description: string;
@@ -51,11 +51,13 @@ export interface ActionOutput {
 
 export interface ActionMetadata {
     inputs: Record<string, ActionInput>;
-    outputs: Record<string, ActionOutput>;
+    outputs?: Record<string, ActionOutput>;
 }
 
 const USAGE_START = '<!-- start usage -->';
 const USAGE_END = '<!-- end usage -->';
+const OUTPUTS_START = '<!-- start outputs -->';
+const OUTPUTS_END = '<!-- end outputs -->';
 
 /**
  * Render the usage section: a YAML code block that lists every input with its description and default.
@@ -143,6 +145,25 @@ export function renderUsage(actionReference: string, actionYaml: ActionMetadata)
     return lines;
 }
 
+// Make text safe for one Markdown table cell
+function tableCell(text: string): string {
+    return text
+        .trim()
+        .replace(/\s+/g, ' ') // A line break would end the table row
+        .replaceAll('|', '\\|');
+}
+
+/**
+ * Render the outputs section: a Markdown table with one row for each output.
+ */
+export function renderOutputs(actionYaml: ActionMetadata): string[] {
+    const lines = ['| Output | Description |', '| --- | --- |'];
+    for (const [key, output] of Object.entries(actionYaml.outputs ?? {})) {
+        lines.push(`| \`${tableCell(key)}\` | ${tableCell(output.description)} |`);
+    }
+    return lines;
+}
+
 /**
  * Replace the lines between startToken and endToken in content. The tokens themselves are kept.
  */
@@ -169,7 +190,7 @@ export function replaceSection(content: string, startToken: string, endToken: st
 }
 
 /**
- * Regenerate the usage section of the README from the action metadata.
+ * Regenerate the usage and outputs sections of the README from the action metadata.
  */
 export async function updateReadme(
     actionReference: string,
@@ -185,8 +206,10 @@ export async function updateReadme(
     // parse the action.yml
     const actionYaml = yaml.load(action) as ActionMetadata;
 
-    // Write the new README
-    await fs.writeFile(readmePath, replaceSection(readme, USAGE_START, USAGE_END, renderUsage(actionReference, actionYaml)));
+    // Build and write the new README
+    let newReadme = replaceSection(readme, USAGE_START, USAGE_END, renderUsage(actionReference, actionYaml));
+    newReadme = replaceSection(newReadme, OUTPUTS_START, OUTPUTS_END, renderOutputs(actionYaml));
+    await fs.writeFile(readmePath, newReadme);
 }
 
 if (import.meta.main) {
