@@ -111,12 +111,23 @@ jobs:
       - name: Install deps
         run: npm ci
       - name: Test code
-        run: npm run test:coverage
-      - name: Report coverage
+        # keep a copy of the output for the summary; pipefail stops tee from hiding a test failure
         run: |
-          echo "# Code coverage" >> $GITHUB_STEP_SUMMARY
-          npx nyc report | sed --expression='1d;$d'  >> $GITHUB_STEP_SUMMARY
+          set -o pipefail
+          npm run test:coverage | tee "$RUNNER_TEMP/coverage.txt"
+      - name: Report coverage
         if: ${{ !cancelled() }}
+        # copy the coverage table that node prints between its start and end markers into the job summary
+        run: |
+          if [ ! -f "$RUNNER_TEMP/coverage.txt" ]; then
+            exit 0
+          fi
+          {
+            echo '# Code coverage'
+            echo '```text'
+            sed -n '/start of coverage report/,/end of coverage report/p' "$RUNNER_TEMP/coverage.txt" | sed -e '1d' -e '$d' -e 's/^ℹ //'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
   runaction:
     needs:
       - commitlint
