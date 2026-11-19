@@ -15,7 +15,7 @@ nvm use
 ## Build, Test & Lint
 
 ```sh
-npm run build         # rollup bundles src/ to lib/main/index.js + auto-generates README usage section from action.yml
+npm run build         # rollup bundles src/ to lib/main/index.js + auto-generates README usage and outputs sections from action.yml
 npm run test          # runs node:test with experimental module mocks
 npm run test:coverage # tests with Node's native --experimental-test-coverage
 npm run lint          # eslint across src/, misc/, test/
@@ -36,7 +36,7 @@ node --test --experimental-test-module-mocks --disable-warning=ExperimentalWarni
 
 TypeScript is executed directly by Node 24 via native type-stripping — no transpiler (no `ts-node`, no `tsx`) is needed to run `.ts` files. This is why test runs are very fast and imports use `.ts` extensions.
 
-The build step (`npm run build`) also runs `npm run docs`, which regenerates the usage section in `README.md` from `action.yml` via `misc/generate-docs.ts`. If you change `action.yml` inputs, rebuild to keep the README in sync.
+The build step (`npm run build`) also runs `npm run docs`, which regenerates the usage and outputs sections in `README.md` from `action.yml` via `misc/generate-docs.ts`. If you change `action.yml` inputs or outputs, rebuild to keep the README in sync.
 
 ## Architecture
 
@@ -66,17 +66,22 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 ## Conventions
 
 - **Testing:** Uses the built-in [`node:test`](https://nodejs.org/api/test.html) runner with `--experimental-test-module-mocks` and `node:assert/strict`. No Mocha, Chai, Sinon, or c8. Each test file mirrors its source file (e.g., `test/install.ts` tests `src/install.ts`).
-  - **Mocking pattern:** Create `mock.fn()` stubs at the top of the test file, call `mock.module(specifier, { namedExports, defaultExport })` for each dependency you need to replace, then `await import('../src/sut.ts')` to load the system-under-test against those mocks. Reset call history and implementations in `beforeEach` using `fn.mock.resetCalls()` and `fn.mock.mockImplementation(...)`. Because a given `mock.module()` call cannot be replaced mid-run, the tests share one mock per module across all cases and vary behaviour via `mockImplementation`/`mockImplementationOnce(impl, onCall)` — note that `mockImplementationOnce` without `onCall` defaults to call index `0`, so pass an explicit index when queueing sequential once-implementations.
-  - **Coverage caveat:** `--experimental-test-coverage` under-reports coverage for files that are `mock.module()`-replaced in sibling tests (the aggregator treats the mock shadow as an uncovered run of the real file). Every source file achieves 100% coverage when its own test file is run in isolation; treat the aggregated numbers as a lower bound while this feature is experimental.
+  - **Mocking pattern:** Create `mock.fn()` stubs at the top of the test file, call `mock.module(specifier, { namedExports, defaultExport })` for each dependency you need to replace, then `await import('../src/sut.ts')` to load the system-under-test against those mocks. Reset call history and implementations in `beforeEach` using `fn.mock.resetCalls()` and `fn.mock.mockImplementation(...)`. Because a given `mock.module()` call cannot be replaced mid-run, the tests share one mock per module across all cases and vary behaviour via `mockImplementation`/`mockImplementationOnce(impl, onCall)` — note that `mockImplementationOnce` without `onCall` applies to the next call, so a second one queued before that call replaces the first. Pass an explicit index when queueing sequential once-implementations.
+  - **Coverage caveat:** `--experimental-test-coverage` under-reports coverage for files that are `mock.module()`-replaced in sibling tests (the aggregator treats the mock shadow as an uncovered run of the real file). Running a source file's own test file in isolation gives a more accurate figure for that file, but not every file reaches 100% that way. Treat the aggregated numbers as a lower bound while this feature is experimental.
 - **Commit messages:** Follow [Conventional Commits](https://www.conventionalcommits.org/) enforced by commitlint. Semantic-release uses these to generate automated releases and changelogs, so correct commit types are critical.
   - `fix` — Bug fixes or behavioural corrections that don't change public interfaces. Triggers a **patch** release.
+  - `perf` — Performance improvements that don't change behaviour. Triggers a **patch** release.
+  - `revert` — Reverts an earlier commit. Triggers a **patch** release only if the body contains `This reverts commit <sha>.`, as `git revert` writes it.
   - `feat` — New backwards-compatible functionality (e.g., adding a new input, method, or option without removing anything). Triggers a **minor** release.
-  - `feat!` (or any type with `!`) — Breaking changes where consumers would need to update their code (removed/renamed inputs, changed default behaviour). Triggers a **major** release.
+  - `feat!` (or any type with `!`, or a `BREAKING CHANGE:` footer) — Breaking changes where consumers would need to update their code (removed/renamed inputs, changed default behaviour). Triggers a **major** release.
+  - `build` — Changes to the build system, packaging, or the docs generator. **Does not trigger a release.**
   - `chore` — Dependency updates, tooling changes, or housekeeping that doesn't affect project code. **Does not trigger a release.**
   - `ci` — Changes to CI pipelines or workflow configuration. **Does not trigger a release.**
-  - `style` — Refactoring or stylistic changes that do not change functionality. **Does not trigger a release.**
+  - `docs` — Documentation only, including the README and code comments. **Does not trigger a release.**
+  - `refactor` — Code changes that don't change behaviour. **Does not trigger a release.**
+  - `style` — Formatting only (white space, semicolons, trailing commas). **Does not trigger a release.**
   - `test` — Changes that only touch test files. **Does not trigger a release.**
-  - Only `fix` and `feat` trigger releases. If a change doesn't neatly fit `fix` or `feat` but still needs to be released, use whichever is most appropriate to ensure a release is created.
+  - Only `fix`, `perf`, `revert`, `feat` and breaking changes trigger releases (the default release rules of `@semantic-release/commit-analyzer`). If a change doesn't neatly fit one of these but still needs to be released, use whichever is most appropriate to ensure a release is created.
 - **Commits and merges:**
   - Commits should be atomic and ideally deployable in isolation — all tests, linting, and commitlinting should pass on each individual commit.
   - PRs are merged using a **merge commit** (no squash-merge or rebase-merge). Each commit in the PR history is preserved.
@@ -86,5 +91,5 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 - **Node version:** Pinned to 24 via `.nvmrc`. The action runs using `node24` (set in `action.yml`).
 - **Imports:** Use the `type` keyword for type-only imports (e.g., `import type { Foo } from './bar'`). When importing both types and values from the same module, use a single import with inline `type` (e.g., `import { type Foo, bar } from './baz'`). Imports are ordered alphabetically by module path, grouped as: `node:` built-ins first, then external packages, then local file imports.
 - **ESLint rules:** Trailing commas required on multiline, semicolons required, no variable shadowing. `@typescript-eslint/no-explicit-any` is disabled in test files.
-- **README updates:** The usage block in `README.md` between `<!-- start usage -->` and `<!-- end usage -->` is auto-generated. Edit `action.yml` inputs, not the README directly.
+- **README updates:** In `README.md`, the usage block between `<!-- start usage -->` and `<!-- end usage -->` and the outputs table between `<!-- start outputs -->` and `<!-- end outputs -->` are auto-generated. Edit the inputs and outputs in `action.yml`, not the README directly.
 - **Keeping this file up to date:** If a change affects the architecture, conventions, build process, or any other information documented here, update this file as part of the same PR.
