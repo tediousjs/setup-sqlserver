@@ -131,7 +131,8 @@ export function renderUsage(actionReference: string, actionYaml: ActionMetadata)
                 inputValue = input.default;
                 break;
             default:
-                inputValue = `'${input.default ?? ''}'`;
+                // A YAML single-quoted scalar escapes a quote by doubling it
+                inputValue = `'${(input.default ?? '').replaceAll('\'', '\'\'')}'`;
         }
         lines.push(`    ${key}: ${inputValue}`);
 

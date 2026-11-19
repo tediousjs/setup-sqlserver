@@ -45,6 +45,13 @@ describe('generate-docs', () => {
                 Object.fromEntries(Object.entries(action.inputs).map(([key, input]) => [key, expectedValue(input.default)])),
             );
         });
+        it('escapes single quotes in defaults', () => {
+            const step = loadUsage(renderUsage(actionReference, {
+                inputs: { greeting: { description: 'A greeting.', default: 'it\'s a \'test\'' } },
+                outputs: {},
+            }));
+            assert.deepEqual(step.with, { greeting: 'it\'s a \'test\'' });
+        });
         it('throws when the action reference is empty', () => {
             assert.throws(() => renderUsage('', { inputs: {}, outputs: {} }), /actionReference must not be empty/);
         });
