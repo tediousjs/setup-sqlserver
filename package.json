@@ -20,7 +20,7 @@
     "lib/"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "overrides": {
     "conventional-changelog-conventionalcommits": ">= 8.0.0"
   },
