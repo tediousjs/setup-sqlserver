@@ -49,6 +49,9 @@ jobs:
         run: npm clean-install --ignore-scripts
       - name: Lint code
         run: npm run lint
+      - name: Type check
+        # the tests run through node's type stripping and the build only checks src/, so check the types here
+        run: npm run typecheck
   buildlint:
     name: Check built files
     runs-on: ubuntu-22.04
