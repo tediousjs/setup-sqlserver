@@ -1,4 +1,4 @@
 /.package/
 /node_modules/
-/.github/release/node_modules/
+/tools/release/node_modules/
 /coverage/

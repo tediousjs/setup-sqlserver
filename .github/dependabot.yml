@@ -13,7 +13,7 @@ updates:
     # the main package, and the release tools that only the release job installs
     directories:
       - "/"
-      - "/.github/release"
+      - "/tools/release"
     schedule:
       interval: "weekly"
     groups:
