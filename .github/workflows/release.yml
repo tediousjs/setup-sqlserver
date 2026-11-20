@@ -180,12 +180,65 @@ jobs:
             fsutil fsinfo sectorinfo "$($volume.DriveLetter):"
           }
       - name: Install sql server
+        id: install
         uses: ./
         with:
           sqlserver-version: ${{ matrix.sqlserver }}
           native-client-version: 11
           odbc-version: 17
           install-updates: true
+      # the action only warns when the database isn't ready, so check that the instance it reports really works:
+      # log in over TCP with its sa-password output and compare what the server reports with what was asked for
+      - name: Check the installed instance
+        shell: pwsh
+        env:
+          # sqlcmd reads the password from SQLCMDPASSWORD, so it stays off the command line
+          SQLCMDPASSWORD: ${{ steps.install.outputs.sa-password }}
+          INSTANCE_NAME: ${{ steps.install.outputs.instance-name }}
+          SQLSERVER_VERSION: ${{ matrix.sqlserver }}
+          ODBC_VERSION: '17'
+        run: |
+          # handle failures here instead of stopping at the first error, so every check reports
+          $ErrorActionPreference = 'Continue'
+          $failed = $false
+          if ($env:INSTANCE_NAME -ne 'MSSQLSERVER') {
+            Write-Host "::error::The instance-name output is '$env:INSTANCE_NAME', expected 'MSSQLSERVER'"
+            $failed = $true
+          }
+          $query = "SET NOCOUNT ON; SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(128)), CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(128)), ISNULL(CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(128)), ''), CAST(SERVERPROPERTY('Collation') AS nvarchar(128))"
+          $row = $null
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            $output = sqlcmd -S 'tcp:127.0.0.1,1433' -U sa -b -l 5 -h -1 -W -s '|' -Q $query 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $row = $output | Where-Object { "$_" -match '\|' } | Select-Object -Last 1
+              break
+            }
+            Write-Host "Login attempt $attempt over TCP failed: $output"
+            Start-Sleep -Seconds 5
+          }
+          if (-not $row) {
+            Write-Host "::error::Could not log in as sa over TCP with the sa-password output"
+            exit 1
+          }
+          $major, $level, $updateLevel, $collation = "$row".Trim().Split('|')
+          Write-Host "SQL Server major version $major, level $level, update level '$updateLevel', collation $collation"
+          $expectedMajor = @{ 'sql-latest' = '17'; 'sql-2025' = '17'; 'sql-2022' = '16'; 'sql-2019' = '15'; 'sql-2017' = '14'; 'sql-2016' = '13' }[$env:SQLSERVER_VERSION]
+          if ($major -ne $expectedMajor) {
+            Write-Host "::error::SQL Server reports major version $major, expected $expectedMajor for $env:SQLSERVER_VERSION"
+            $failed = $true
+          }
+          if ($collation -ne 'SQL_Latin1_General_CP1_CI_AS') {
+            Write-Host "::error::SQL Server reports collation $collation, expected the default SQL_Latin1_General_CP1_CI_AS"
+            $failed = $true
+          }
+          $driver = "ODBC Driver $env:ODBC_VERSION for SQL Server"
+          if (-not (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\$driver")) {
+            Write-Host "::error::$driver is not registered"
+            $failed = $true
+          }
+          if ($failed) {
+            exit 1
+          }
       - name: Upload SQL Server logs
         if: failure()
         uses: actions/upload-artifact@v7
