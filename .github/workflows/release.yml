@@ -70,7 +70,13 @@ jobs:
       - name: Build files
         run: npm run build
       - name: Check built files
-        run: git diff-files --quiet -w
+        # intent-to-add makes new untracked files show up in the diff, and no -w so whitespace changes count too
+        run: |
+          git add --intent-to-add --all
+          if ! git diff --exit-code --stat; then
+            echo "::error::The built files are out of date. Run npm run build and commit the changes to lib/ and README.md."
+            exit 1
+          fi
   test:
     name: Run tests
     runs-on: ubuntu-22.04
