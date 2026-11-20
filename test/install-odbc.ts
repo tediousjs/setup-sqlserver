@@ -1,3 +1,4 @@
+import { win32 } from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -17,6 +18,7 @@ mock.module('@actions/core', { namedExports: core });
 mock.module('@actions/tool-cache', { namedExports: tc });
 mock.module('@actions/exec', { namedExports: exec });
 mock.module('@actions/io', { namedExports: io });
+mock.module('node:path', { namedExports: { ...win32 }, defaultExport: win32 });
 
 const { default: installOdbc } = await import('../src/install-odbc.ts');
 
@@ -28,8 +30,8 @@ describe('install-odbc', () => {
             fn.mock.resetCalls();
         }
         tc.find.mock.mockImplementation(() => '');
-        tc.downloadTool.mock.mockImplementation(async () => 'C:/tmp/downloads');
-        tc.cacheFile.mock.mockImplementation(async () => 'C:/tmp/cache/');
+        tc.downloadTool.mock.mockImplementation(async () => 'C:\\tmp\\downloads');
+        tc.cacheFile.mock.mockImplementation(async () => 'C:\\tmp\\cache\\');
         exec.exec.mock.mockImplementation(async () => 0);
         io.mv.mock.mockImplementation(async () => {});
     });
@@ -44,7 +46,7 @@ describe('install-odbc', () => {
         });
         it('installs from cache', async () => {
             Object.defineProperty(process, 'arch', { value: 'x64' });
-            tc.find.mock.mockImplementation(() => 'C:/tmp/');
+            tc.find.mock.mockImplementation(() => 'C:\\tmp\\');
             await installOdbc('18');
             assert.deepEqual(tc.find.mock.calls[0].arguments, ['msodbcsql', '18.0.0', 'x64']);
             assert.equal(tc.downloadTool.mock.callCount(), 0);
@@ -54,7 +56,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    '"C:/tmp/msodbcsql.msi"',
+                    '"C:\\tmp\\msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },
@@ -71,7 +73,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    '"C:/tmp/cache/msodbcsql.msi"',
+                    '"C:\\tmp\\cache\\msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },
@@ -88,7 +90,7 @@ describe('install-odbc', () => {
                 [
                     '/passive',
                     '/i',
-                    '"C:/tmp/cache/msodbcsql.msi"',
+                    '"C:\\tmp\\cache\\msodbcsql.msi"',
                     'IACCEPTMSODBCSQLLICENSETERMS=YES',
                 ],
                 { windowsVerbatimArguments: true },
