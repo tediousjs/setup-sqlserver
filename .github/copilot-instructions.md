@@ -20,6 +20,7 @@ npm run test          # runs node:test with experimental module mocks
 npm run test:coverage # tests with Node's native --experimental-test-coverage
 npm run lint          # eslint across src/, misc/, test/
 npm run lint:fix      # eslint with auto-fix
+npm run typecheck     # tsc type check of src/ and misc/ (tsconfig.typecheck.json); CI runs it in the lint job
 ```
 
 Run a single test file:
@@ -56,7 +57,7 @@ The build step (`npm run build`) also runs `npm run docs`, which regenerates the
 
 **Tool cache:** Cache and look up downloads only through `src/tool-cache.ts` (`findCachedTool`, `cacheToolDir`, `cacheToolFile`), never `@actions/tool-cache` directly. Its `find()` only does an exact lookup for explicit semver versions, so the wrapper pads versions like `'2022'` to `'2022.0.0'`; a direct `tc.find('sqlserver', '2022')` silently never hits. `test/tool-cache.ts` exercises the real library — keep it unmocked. Cumulative updates are intentionally cached per SQL Server version rather than per CU, so a runner with a persistent tool cache keeps reusing the first CU it downloaded (documented in the README "Caching" section).
 
-**Build output:** Rollup (config in `rollup.config.mjs`) bundles everything into `lib/main/index.js` as a minified ESM module, which is what `action.yml` references. The `lib/` directory is committed to the repository. **Every commit must include up-to-date build output** — CI checks this by rebuilding and running `git diff-files --quiet`. Always run `npm run build` and commit the resulting changes to `lib/` and `README.md` before pushing.
+**Build output:** Rollup (config in `rollup.config.mjs`) bundles everything into `lib/main/index.js` as a minified ESM module, which is what `action.yml` references. The `lib/` directory is committed to the repository. **Every commit must include up-to-date build output** — CI checks this by rebuilding and failing on any difference, including whitespace-only changes and new files in `lib/`. Always run `npm run build` and commit the resulting changes to `lib/` and `README.md` before pushing. The build fails on type errors (`noEmitOnError`), and because `prepare` runs the build, so does a plain `npm install` while `src/` has a type error; use `npm install --ignore-scripts` to install anyway.
 
 **ESM module format:** The package is published as ESM (`"type": "module"` in `package.json`). Consequences for contributors:
 
