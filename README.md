@@ -50,6 +50,33 @@ See [action.yml](./action.yml):
 ```
 <!-- end usage -->
 
+### Outputs
+
+<!-- start outputs -->
+| Output | Description |
+| --- | --- |
+| `sa-password` | The SA password, this will be the same as the input, but can be useful when relying on the default value. |
+| `instance-name` | The instance name for the SQL Server. |
+<!-- end outputs -->
+
+### SA password
+
+The default `sa-password`, `yourStrong(!)Password`, is public. The action
+installs SQL Server with TCP/IP enabled (`/TCPENABLED=1`) and with SQL Server
+authentication (`/SECURITYMODE=SQL`). Anyone who can connect to the runner on
+the SQL Server port (1433 by default) can then log in as `sa` with the default
+password.
+
+If you use a self-hosted runner that other machines can reach, store your own
+password in a secret and pass it to `sa-password`:
+
+```yaml
+- name: Install SQL Server
+  uses: tediousjs/setup-sqlserver@v4
+  with:
+    sa-password: ${{ secrets.SQL_SA_PASSWORD }}
+```
+
 ### SQL Server 2025
 
 Set `sqlserver-version` to `'2025'` (or `'sql-2025'`) to install SQL Server
@@ -96,7 +123,7 @@ only warning as it does after a normal install.
 
 ```yml
 - name: Install SQL Server
-  uses: ./
+  uses: tediousjs/setup-sqlserver@v4
   with:
     sqlserver-version: sql-latest
 ```

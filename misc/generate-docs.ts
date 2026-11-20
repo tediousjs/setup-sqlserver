@@ -38,58 +38,36 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //
 // SUMMARY
 //
-// This script rebuilds the usage section in the README.md to be consistent with the action.yml
+// This script rebuilds the usage and outputs sections in the README.md to be consistent with the action.yml
 
-async function updateUsage(
-    actionReference: string,
-    actionYamlPath = 'action.yml',
-    readmePath = 'README.md',
-    startToken = '<!-- start usage -->',
-    endToken = '<!-- end usage -->',
-): Promise<void> {
+export interface ActionInput {
+    description: string;
+    default?: string;
+}
+
+export interface ActionOutput {
+    description: string;
+}
+
+export interface ActionMetadata {
+    inputs: Record<string, ActionInput>;
+    outputs?: Record<string, ActionOutput>;
+}
+
+const USAGE_START = '<!-- start usage -->';
+const USAGE_END = '<!-- end usage -->';
+const OUTPUTS_START = '<!-- start outputs -->';
+const OUTPUTS_END = '<!-- end outputs -->';
+
+/**
+ * Render the usage section: a YAML code block that lists every input with its description and default.
+ */
+export function renderUsage(actionReference: string, actionYaml: ActionMetadata): string[] {
     if (!actionReference) {
         throw new Error('Parameter actionReference must not be empty');
     }
 
-    // load files
-    const [action, readme] = await Promise.all([
-        fs.readFile(actionYamlPath).then((f) => f.toString()),
-        fs.readFile(readmePath).then((f) => f.toString()),
-    ]);
-
-    // parse the action.yml
-    const actionYaml = yaml.load(action) as {
-        inputs: Record<string, {
-            description: string;
-            default?: string;
-        }>;
-        outputs: Record<string, {
-            description: string;
-        }>;
-    };
-
-    // Find the start token
-    const startTokenIndex = readme.indexOf(startToken);
-    if (startTokenIndex < 0) {
-        throw new Error(`Start token '${startToken}' not found`);
-    }
-
-    // Find the end token
-    const endTokenIndex = readme.indexOf(endToken);
-    if (endTokenIndex < 0) {
-        throw new Error(`End token '${endToken}' not found`);
-    } else if (endTokenIndex < startTokenIndex) {
-        throw new Error('Start token must appear before end token');
-    }
-
-    // Build the new README
-    const newReadme: string[] = [];
-
-    // Append the beginning
-    newReadme.push(readme.substring(0, startTokenIndex + startToken.length));
-
-    // Build the new usage section
-    newReadme.push('```yaml', `- uses: ${actionReference}`, '  with:');
+    const lines: string[] = ['```yaml', `- uses: ${actionReference}`, '  with:'];
     const inputs = actionYaml.inputs;
     let firstInput = true;
     for (const key of Object.keys(inputs)) {
@@ -97,7 +75,7 @@ async function updateUsage(
 
         // Line break between inputs
         if (!firstInput) {
-            newReadme.push('');
+            lines.push('');
         }
 
         // Constrain the width of the description
@@ -131,7 +109,7 @@ async function updateUsage(
             }
 
             // Append segment
-            newReadme.push(`    # ${segment}`.trimEnd());
+            lines.push(`    # ${segment}`.trimEnd());
 
             // Remaining
             description = description.substr(segment.length);
@@ -140,11 +118,11 @@ async function updateUsage(
         if (input.default !== undefined) {
             // Append blank line if description had paragraphs
             if ((input.description as string).trimEnd().match(/\n[ ]*\r?\n/)) {
-                newReadme.push(`    #`);
+                lines.push(`    #`);
             }
 
             // Default
-            newReadme.push(`    # Default: ${input.default}`);
+            lines.push(`    # Default: ${input.default}`);
         }
 
         // Input name
@@ -155,24 +133,89 @@ async function updateUsage(
                 inputValue = input.default;
                 break;
             default:
-                inputValue = `'${input.default ?? ''}'`;
+                // A YAML single-quoted scalar escapes a quote by doubling it
+                inputValue = `'${(input.default ?? '').replaceAll('\'', '\'\'')}'`;
         }
-        newReadme.push(`    ${key}: ${inputValue}`);
+        lines.push(`    ${key}: ${inputValue}`);
 
         firstInput = false;
     }
 
-    newReadme.push('```');
-
-    // Append the end
-    newReadme.push(readme.substr(endTokenIndex));
-
-    // Write the new README
-    await fs.writeFile(readmePath, newReadme.join(os.EOL));
+    lines.push('```');
+    return lines;
 }
 
-updateUsage(
-    `tediousjs/setup-sqlserver@v${version.split('.')[0]}`,
-    path.join(__dirname, '..', 'action.yml'),
-    path.join(__dirname, '..', 'README.md'),
-);
+// Make text safe for one Markdown table cell
+function tableCell(text: string): string {
+    return text
+        .trim()
+        .replace(/\s+/g, ' ') // A line break would end the table row
+        .replaceAll('|', '\\|');
+}
+
+/**
+ * Render the outputs section: a Markdown table with one row for each output.
+ */
+export function renderOutputs(actionYaml: ActionMetadata): string[] {
+    const lines = ['| Output | Description |', '| --- | --- |'];
+    for (const [key, output] of Object.entries(actionYaml.outputs ?? {})) {
+        lines.push(`| \`${tableCell(key)}\` | ${tableCell(output.description)} |`);
+    }
+    return lines;
+}
+
+/**
+ * Replace the lines between startToken and endToken in content. The tokens themselves are kept.
+ */
+export function replaceSection(content: string, startToken: string, endToken: string, lines: string[]): string {
+    // Find the start token
+    const startTokenIndex = content.indexOf(startToken);
+    if (startTokenIndex < 0) {
+        throw new Error(`Start token '${startToken}' not found`);
+    }
+
+    // Find the end token
+    const endTokenIndex = content.indexOf(endToken);
+    if (endTokenIndex < 0) {
+        throw new Error(`End token '${endToken}' not found`);
+    } else if (endTokenIndex < startTokenIndex) {
+        throw new Error('Start token must appear before end token');
+    }
+
+    return [
+        content.substring(0, startTokenIndex + startToken.length),
+        ...lines,
+        content.substring(endTokenIndex),
+    ].join(os.EOL);
+}
+
+/**
+ * Regenerate the usage and outputs sections of the README from the action metadata.
+ */
+export async function updateReadme(
+    actionReference: string,
+    actionYamlPath = 'action.yml',
+    readmePath = 'README.md',
+): Promise<void> {
+    // load files
+    const [action, readme] = await Promise.all([
+        fs.readFile(actionYamlPath, 'utf8'),
+        fs.readFile(readmePath, 'utf8'),
+    ]);
+
+    // parse the action.yml
+    const actionYaml = yaml.load(action) as ActionMetadata;
+
+    // Build and write the new README
+    let newReadme = replaceSection(readme, USAGE_START, USAGE_END, renderUsage(actionReference, actionYaml));
+    newReadme = replaceSection(newReadme, OUTPUTS_START, OUTPUTS_END, renderOutputs(actionYaml));
+    await fs.writeFile(readmePath, newReadme);
+}
+
+if (import.meta.main) {
+    await updateReadme(
+        `tediousjs/setup-sqlserver@v${version.split('.')[0]}`,
+        path.join(__dirname, '..', 'action.yml'),
+        path.join(__dirname, '..', 'README.md'),
+    );
+}
