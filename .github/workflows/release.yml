@@ -206,13 +206,20 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            .github/release/package-lock.json
       - name: Install dependencies
-        run: npm clean-install
+        # no install scripts, so no dependency code runs before the signatures are verified; semantic-release
+        # still builds lib/ through the version and prepare scripts when it prepares a release
+        run: npm clean-install --ignore-scripts
       - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
         run: npm audit signatures
       - name: Install the release tools
         # semantic-release and its plugins have their own lockfile, so development installs don't include them
-        run: npm clean-install --prefix .github/release
+        run: npm clean-install --ignore-scripts --prefix .github/release
+      - name: Verify the registry signatures of the release tools
+        run: npm audit signatures --prefix .github/release
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
