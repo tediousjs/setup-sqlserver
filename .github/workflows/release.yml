@@ -25,7 +25,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Lint commit
         if: github.event_name == 'push'
         run: npx commitlint --from HEAD~1 --to HEAD --verbose
@@ -46,7 +46,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Lint code
         run: npm run lint
   buildlint:
@@ -63,7 +63,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Build files
         run: npm run build
       - name: Check built files
@@ -86,7 +86,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Run tests
         run: npm run test
   coverage:
@@ -106,7 +106,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install deps
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Test code
         # keep a copy of the output for the summary; pipefail stops tee from hiding a test failure
         run: |
