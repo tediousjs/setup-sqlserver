@@ -16,6 +16,7 @@ import {
     getOsVersion,
     waitForDatabase,
 } from './utils.ts';
+import { quoteWindowsArgument } from './windows-args.ts';
 import installNativeClient from './install-native-client.ts';
 import installOdbc from './install-odbc.ts';
 
@@ -144,7 +145,7 @@ export default async function install() {
                 }
             });
             if (updatePath) {
-                installArgs.push('/UPDATEENABLED=1', `/UpdateSource="${dirname(updatePath)}"`);
+                installArgs.push('/UPDATEENABLED=1', `/UpdateSource=${quoteWindowsArgument(dirname(updatePath))}`);
             }
         }
     }
@@ -153,6 +154,8 @@ export default async function install() {
     const instanceDirArgs = await findInstanceDirArgs(installArgs);
     try {
         // @todo - make sure that the arguments are unique / don't conflict
+        // the arguments are passed verbatim, so quote the values that the action adds itself; the user's
+        // install-arguments are passed as they are given
         const exitCode = await core.group('Installing SQL Server', () => exec.exec(`"${toolPath}"`, [
             '/q',
             '/ACTION=Install',
@@ -162,9 +165,9 @@ export default async function install() {
             '/SQLSYSADMINACCOUNTS="BUILTIN\\ADMINISTRATORS"',
             '/TCPENABLED=1',
             '/NPENABLED=0',
-            `/SQLCOLLATION="${collation}"`,
+            `/SQLCOLLATION=${quoteWindowsArgument(collation)}`,
             '/SECURITYMODE=SQL',
-            `/SAPWD="${password}"`,
+            `/SAPWD=${quoteWindowsArgument(password)}`,
             '/IACCEPTSQLSERVERLICENSETERMS',
             ...instanceDirArgs,
             ...(config.installArgs ?? []),

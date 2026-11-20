@@ -213,6 +213,22 @@ describe('install', () => {
             '/SQLTEMPDBFILECOUNT=4',
         ]);
     });
+    it('escapes the password and collation so that setup gets them unchanged', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({
+            version: 'box',
+            password: 'Ab1"cd ef\\',
+            collation: 'Odd"Collation',
+        }));
+        await install();
+        const args = exec.exec.mock.calls[0].arguments[1] as string[];
+        assert.ok(args.includes('/SAPWD="Ab1\\"cd ef\\\\"'), `got ${args.find((arg) => arg.startsWith('/SAPWD='))}`);
+        assert.ok(args.includes('/SQLCOLLATION="Odd\\"Collation"'));
+        // the arguments after the password must stay separate arguments
+        assert.equal(args[args.indexOf('/SAPWD="Ab1\\"cd ef\\\\"') + 1], '/IACCEPTSQLSERVERLICENSETERMS');
+        // the action's own outputs and readiness check use the password as it was given
+        assert.deepEqual(core.setOutput.mock.calls[0].arguments, ['sa-password', 'Ab1"cd ef\\']);
+        assert.deepEqual(utils.waitForDatabase.mock.calls[0].arguments, ['Ab1"cd ef\\']);
+    });
     it('warns and waits for the database if setup requests a reboot', async () => {
         exec.exec.mock.mockImplementation(async () => 3010);
         await install();
