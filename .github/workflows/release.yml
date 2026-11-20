@@ -198,7 +198,7 @@ jobs:
   release:
     name: Release
     concurrency: release
-    if: ${{ github.repository_owner == 'tediousjs' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
+    if: ${{ github.repository_owner == 'tediousjs' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     needs:
@@ -211,7 +211,6 @@ jobs:
       contents: write # to be able to publish a GitHub release
       issues: write # to be able to comment on released issues
       pull-requests: write # to be able to comment on released pull requests
-      id-token: write # to enable use of OIDC for npm provenance
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -222,11 +221,21 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            .github/release/package-lock.json
       - name: Install dependencies
-        run: npm clean-install
+        # no install scripts, so no dependency code runs before the signatures are verified; semantic-release
+        # still builds lib/ through the version and prepare scripts when it prepares a release
+        run: npm clean-install --ignore-scripts
       - name: Verify the integrity of provenance attestations and registry signatures for installed dependencies
         run: npm audit signatures
+      - name: Install the release tools
+        # semantic-release and its plugins have their own lockfile, so development installs don't include them
+        run: npm clean-install --ignore-scripts --prefix .github/release
+      - name: Verify the registry signatures of the release tools
+        run: npm audit signatures --prefix .github/release
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
+        run: ./.github/release/node_modules/.bin/semantic-release
