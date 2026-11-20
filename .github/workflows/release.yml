@@ -13,6 +13,7 @@ jobs:
   commitlint:
     name: Lint commits
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -25,7 +26,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Lint commit
         if: github.event_name == 'push'
         run: npx commitlint --from HEAD~1 --to HEAD --verbose
@@ -35,6 +36,7 @@ jobs:
   codelint:
     name: Lint code
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -46,12 +48,16 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Lint code
         run: npm run lint
+      - name: Type check
+        # the tests run through node's type stripping and the build only checks src/, so check the types here
+        run: npm run typecheck
   buildlint:
     name: Check built files
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -63,14 +69,21 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Build files
         run: npm run build
       - name: Check built files
-        run: git diff-files --quiet -w
+        # intent-to-add makes new untracked files show up in the diff, and no -w so whitespace changes count too
+        run: |
+          git add --intent-to-add --all
+          if ! git diff --exit-code --stat; then
+            echo "::error::The built files are out of date. Run npm run build and commit the changes to lib/ and README.md."
+            exit 1
+          fi
   test:
     name: Run tests
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     needs:
       - commitlint
       - codelint
@@ -86,12 +99,13 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm clean-install
+        run: npm clean-install --ignore-scripts
       - name: Run tests
         run: npm run test
   coverage:
     name: Test coverage
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     needs:
       - commitlint
       - codelint
@@ -106,7 +120,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install deps
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Test code
         # keep a copy of the output for the summary; pipefail stops tee from hiding a test failure
         run: |
@@ -138,6 +152,7 @@ jobs:
         os: [ 'windows-2022', 'windows-2025' ]
         sqlserver: [ 'sql-latest', 'sql-2025', 'sql-2022', 'sql-2019', 'sql-2017', 'sql-2016' ]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -185,6 +200,7 @@ jobs:
     concurrency: release
     if: ${{ github.repository_owner == 'tediousjs' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     needs:
       - commitlint
       - codelint
