@@ -223,7 +223,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-            .github/release/package-lock.json
+            tools/release/package-lock.json
       - name: Install dependencies
         # no install scripts, so no dependency code runs before the signatures are verified; semantic-release
         # still builds lib/ through the version and prepare scripts when it prepares a release
@@ -232,10 +232,10 @@ jobs:
         run: npm audit signatures
       - name: Install the release tools
         # semantic-release and its plugins have their own lockfile, so development installs don't include them
-        run: npm clean-install --ignore-scripts --prefix .github/release
+        run: npm clean-install --ignore-scripts --prefix tools/release
       - name: Verify the registry signatures of the release tools
-        run: npm audit signatures --prefix .github/release
+        run: npm audit signatures --prefix tools/release
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/release/node_modules/.bin/semantic-release
+        run: ./tools/release/node_modules/.bin/semantic-release
