@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # the release tools follow the latest Node.js LTS, which can be newer than the node24 that the action runs on
+  # (.nvmrc); the releasetools job checks them on the same version, and the release job waits for it
+  RELEASE_NODE_VERSION: 'lts/*'
+
 jobs:
   commitlint:
     name: Lint commits
@@ -219,7 +224,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
