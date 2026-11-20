@@ -197,6 +197,7 @@ jobs:
           INSTANCE_NAME: ${{ steps.install.outputs.instance-name }}
           SQLSERVER_VERSION: ${{ matrix.sqlserver }}
           ODBC_VERSION: '17'
+          INSTALL_UPDATES: 'true'
         run: |
           # handle failures here instead of stopping at the first error, so every check reports
           $ErrorActionPreference = 'Continue'
@@ -235,6 +236,18 @@ jobs:
           if (-not (Test-Path "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\$driver")) {
             Write-Host "::error::$driver is not registered"
             $failed = $true
+          }
+          # only warn about the update level: a Microsoft download outage makes the action install without updates,
+          # and that shouldn't fail unrelated changes. 2016 is updated with a service pack, the others with a CU.
+          if ($major -eq '13') {
+            $updated = $level -ne 'SP2'
+          } else {
+            $updated = $updateLevel -like 'CU*'
+          }
+          if ($env:INSTALL_UPDATES -eq 'true' -and -not $updated) {
+            Write-Host "::warning::install-updates is true, but SQL Server reports level $level and update level '$updateLevel'"
+          } elseif ($env:INSTALL_UPDATES -ne 'true' -and $updated) {
+            Write-Host "::warning::install-updates is false, but SQL Server reports level $level and update level '$updateLevel'"
           }
           if ($failed) {
             exit 1
