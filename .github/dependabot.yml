@@ -10,7 +10,10 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "npm" # See documentation for possible values
-    directory: "/" # Location of package manifests
+    # the main package, and the release tools that only the release job installs
+    directories:
+      - "/"
+      - "/.github/release"
     schedule:
       interval: "weekly"
     groups:
@@ -19,15 +22,19 @@ updates:
           - "@commitlint/*"
           - "semantic-release"
           - "@semantic-release/*"
-      test-tools:
-        patterns:
-          - "mocha"
-          - "nyc"
-          - "@istanbuljs/nyc-config-typescript"
       lint-tools:
         patterns:
           - "eslint"
-          - "@typescript-eslint/*"
+          - "@eslint/*"
+          - "typescript-eslint"
+      build-tools:
+        patterns:
+          - "rollup"
+          - "@rollup/*"
       action-tools:
         patterns:
           - "@actions/*"
+    ignore:
+      # the action runs on node24, so keep the node types on the same major version
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
