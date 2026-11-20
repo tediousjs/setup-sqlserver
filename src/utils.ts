@@ -9,6 +9,7 @@ import * as tc from '@actions/tool-cache';
 import { generateFileHash } from './crypto.ts';
 import { cacheToolDir, cacheToolFile } from './tool-cache.ts';
 import type { VersionConfig } from './versions.ts';
+import { quoteWindowsArgument } from './windows-args.ts';
 
 /**
  * Helper function to determine the runner being used. Uses `systeminfo` to gather version.
@@ -51,15 +52,34 @@ export interface Inputs {
 }
 
 /**
+ * Register the SA password as a secret, so that it shows as *** in the logs of this and later steps. The setup and
+ * sqlcmd command lines that the action logs can show the password in its escaped form, so mask that form too.
+ *
+ * @param {string} password
+ */
+function maskPassword(password: string) {
+    if (!password) {
+        return;
+    }
+    core.setSecret(password);
+    const escaped = quoteWindowsArgument(password).slice(1, -1);
+    if (escaped !== password) {
+        core.setSecret(escaped);
+    }
+}
+
+/**
  * Gather the action's inputs.
  *
  * @returns {Inputs}
  */
 export function gatherInputs(): Inputs {
     const version = core.getInput('sqlserver-version').replace(/sql-/i, '') || 'latest';
+    const password = core.getInput('sa-password');
+    maskPassword(password);
     return {
         version: version.toLowerCase() === 'latest' ? '2025' : version,
-        password: core.getInput('sa-password'),
+        password,
         collation: core.getInput('db-collation'),
         installArgs: core.getMultilineInput('install-arguments'),
         wait: core.getBooleanInput('wait-for-ready'),

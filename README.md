@@ -77,6 +77,12 @@ password in a secret and pass it to `sa-password`:
     sa-password: ${{ secrets.SQL_SA_PASSWORD }}
 ```
 
+The action masks the password in its logs and in the later steps of the job.
+GitHub prints the step inputs before the action starts, so a password that
+doesn't come from a secret still shows in that step header. GitHub also leaves
+out job outputs that contain a masked value, so read the `sa-password` output
+from the step, not from a job output.
+
 ### SQL Server 2025
 
 Set `sqlserver-version` to `'2025'` (or `'sql-2025'`) to install SQL Server
