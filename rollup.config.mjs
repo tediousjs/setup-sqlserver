@@ -18,6 +18,8 @@ export default {
             sourceMap: true,
             inlineSources: false,
             declaration: false,
+            // fail the build on type errors; by default the plugin only warns and still writes the bundle
+            noEmitOnError: true,
         }),
         nodeResolve({ preferBuiltins: true, exportConditions: ['node'] }),
         commonjs(),
