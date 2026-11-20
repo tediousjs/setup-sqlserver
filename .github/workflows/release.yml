@@ -151,6 +151,23 @@ jobs:
       matrix:
         os: [ 'windows-2022', 'windows-2025' ]
         sqlserver: [ 'sql-latest', 'sql-2025', 'sql-2022', 'sql-2019', 'sql-2017', 'sql-2016' ]
+        # the jobs above use the default inputs; each entry below sets its own variant, so it adds a separate job
+        # that changes one input (quote the values: an unquoted false would fall back to the default below)
+        variant: [ '' ]
+        include:
+          - os: windows-2025
+            sqlserver: sql-2022
+            variant: odbc-18
+            odbc-version: '18'
+          - os: windows-2025
+            sqlserver: sql-latest
+            variant: no-wait
+            wait-for-ready: 'false'
+          - os: windows-2022
+            sqlserver: sql-2019
+            variant: no-updates
+            install-updates: 'false'
+    name: runaction (${{ matrix.os }}, ${{ matrix.sqlserver }}${{ matrix.variant && format(', {0}', matrix.variant) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -185,8 +202,9 @@ jobs:
         with:
           sqlserver-version: ${{ matrix.sqlserver }}
           native-client-version: 11
-          odbc-version: 17
-          install-updates: true
+          odbc-version: ${{ matrix.odbc-version || '17' }}
+          install-updates: ${{ matrix.install-updates || 'true' }}
+          wait-for-ready: ${{ matrix.wait-for-ready || 'true' }}
       # the action only warns when the database isn't ready, so check that the instance it reports really works:
       # log in over TCP with its sa-password output and compare what the server reports with what was asked for
       - name: Check the installed instance
@@ -196,8 +214,8 @@ jobs:
           SQLCMDPASSWORD: ${{ steps.install.outputs.sa-password }}
           INSTANCE_NAME: ${{ steps.install.outputs.instance-name }}
           SQLSERVER_VERSION: ${{ matrix.sqlserver }}
-          ODBC_VERSION: '17'
-          INSTALL_UPDATES: 'true'
+          ODBC_VERSION: ${{ matrix.odbc-version || '17' }}
+          INSTALL_UPDATES: ${{ matrix.install-updates || 'true' }}
         run: |
           # handle failures here instead of stopping at the first error, so every check reports
           $ErrorActionPreference = 'Continue'
@@ -256,7 +274,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: sqlserver-logs-${{ matrix.os }}-${{ matrix.sqlserver }}-${{ github.run_attempt }}
+          name: sqlserver-logs-${{ matrix.os }}-${{ matrix.sqlserver }}${{ matrix.variant && format('-{0}', matrix.variant) || '' }}-${{ github.run_attempt }}
           path: |
             C:/Program Files/Microsoft SQL Server/*/Setup Bootstrap/Log/
             C:/Program Files/Microsoft SQL Server/MSSQL*/MSSQL/Log/
