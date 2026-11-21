@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.5](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.4...v4.1.5) (2026-11-21)
+
+### Bug Fixes
+
+* find the setup and error logs when Program Files isn't on C: ([dcea0eb](https://github.com/tediousjs/setup-sqlserver/commit/dcea0eb541142a83a10881873af940c0c85963ed))
+* print the Detail.txt of the most recent setup run ([191fe2d](https://github.com/tediousjs/setup-sqlserver/commit/191fe2d612da95ffa8c4fd58208671a068e21b01))
+
 ## [4.1.4](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.3...v4.1.4) (2026-11-21)
 
 ### Bug Fixes
