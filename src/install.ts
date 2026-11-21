@@ -9,6 +9,7 @@ import {
     downloadExeInstaller,
     downloadSseiInstaller,
     downloadUpdateInstaller,
+    findInstanceDirArgs,
     gatherErrorLogs,
     gatherInputs,
     gatherSummaryFiles,
@@ -148,6 +149,8 @@ export default async function install() {
         }
     }
     const instanceName = 'MSSQLSERVER';
+    // move the instance off the default volume if SQL Server can't use it
+    const instanceDirArgs = await findInstanceDirArgs(installArgs);
     try {
         // @todo - make sure that the arguments are unique / don't conflict
         const exitCode = await core.group('Installing SQL Server', () => exec.exec(`"${toolPath}"`, [
@@ -163,6 +166,7 @@ export default async function install() {
             '/SECURITYMODE=SQL',
             `/SAPWD="${password}"`,
             '/IACCEPTSQLSERVERLICENSETERMS',
+            ...instanceDirArgs,
             ...(config.installArgs ?? []),
             ...installArgs,
         ], {

@@ -119,6 +119,25 @@ logs a warning and carries on without rebooting. With `wait-for-ready` enabled,
 the action then fails if the instance doesn't respond to queries, rather than
 only warning as it does after a normal install.
 
+### Disks with large sectors
+
+SQL Server can't start from a volume whose physical sector size is over 4 KB.
+Some GitHub-hosted `windows-2022` runners have a C: drive that reports 8 KB
+sectors, so SQL Server setup fails there with its default directories. Before
+setup, the action reads the sector size of the Program Files volume with
+`fsutil fsinfo sectorinfo`. If it is over 4 KB, and the volume of the runner's
+temporary directory (D: on GitHub-hosted runners) reports 4 KB or less, the
+action installs the instance in `D:\Microsoft SQL Server` and logs a warning.
+The system databases, user databases, logs and backups then go to
+`D:\Microsoft SQL Server\MSSQLnn.MSSQLSERVER\MSSQL\`, so use
+`SERVERPROPERTY('InstanceDefaultDataPath')` rather than a fixed path to find
+them. If no such volume exists, the action logs a warning and runs setup with
+the default directories.
+
+To choose the directories yourself, set `/INSTANCEDIR` and `/INSTALLSQLDATADIR`
+in `install-arguments`. If either one is set, the action doesn't change the
+directories. Both must be on a volume with sectors of 4 KB or less.
+
 ### Basic usage
 
 ```yml

@@ -489,3 +489,81 @@ async function queryRegistry(key: string): Promise<Map<string, string>> {
     }
     return values;
 }
+
+/**
+ * The largest physical sector size, in bytes, of a volume that SQL Server can use.
+ *
+ * See: https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/database-file-operations/troubleshoot-os-4kb-disk-sector-size
+ */
+const MAX_SECTOR_SIZE = 4096;
+
+/**
+ * Get the drive of a Windows path, eg: "C:" for "C:\Program Files".
+ *
+ * @param {string | undefined} path
+ * @returns {string | undefined} The drive in upper case, undefined if the path doesn't start with one
+ */
+function driveOf(path: string | undefined): string | undefined {
+    return path?.match(/^([a-z]:)\\/i)?.[1].toUpperCase();
+}
+
+/**
+ * Read the physical sector size of a volume: the larger of the two physical values that fsutil reports, which is
+ * the value that Microsoft says to compare with 4 KB.
+ *
+ * @param {string} drive eg: "C:"
+ * @returns {Promise<number | undefined>} The size in bytes, undefined if it can't be read
+ */
+async function getPhysicalSectorSize(drive: string): Promise<number | undefined> {
+    try {
+        const { exitCode, stdout } = await exec.getExecOutput('fsutil', ['fsinfo', 'sectorinfo', drive], {
+            ignoreReturnCode: true,
+            silent: true,
+        });
+        const sizes = [...stdout.matchAll(/^\s*PhysicalBytesPerSectorFor(?:Atomicity|Performance)\s*:\s*(\d+)/gm)]
+            .map(([, size]) => Number(size));
+        if (sizes.length) {
+            core.debug(`Physical sector size of ${drive} is ${Math.max(...sizes)} bytes`);
+            return Math.max(...sizes);
+        }
+        core.debug(`Unable to read the sector size of ${drive}: fsutil exited with code ${exitCode} and printed no physical sector sizes`);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        core.debug(`Unable to read the sector size of ${drive}: ${reason}`);
+    }
+    return undefined;
+}
+
+/**
+ * Find setup arguments that move the instance off a volume that SQL Server can't use.
+ *
+ * SQL Server can't start from a volume whose physical sector size is over 4 KB, and the OS disk of some
+ * GitHub-hosted runners reports 8 KB. Microsoft's fix is a registry value that needs a reboot, so instead install
+ * the instance on the volume of the runner's temporary directory. Both directories must move: the data directory
+ * holds the system databases, and the instance directory holds the resource database.
+ *
+ * @param {string[]} installArgs The setup arguments from the install-arguments input
+ * @returns {Promise<string[]>} The setup arguments to add, empty if none are needed
+ */
+export async function findInstanceDirArgs(installArgs: string[]): Promise<string[]> {
+    // the user has chosen where the instance goes
+    if (installArgs.some((arg) => /^[/-](INSTANCEDIR|INSTALLSQLDATADIR)=/i.test(arg))) {
+        return [];
+    }
+    // setup installs the instance in the Program Files directory by default
+    const defaultDrive = driveOf(process.env.ProgramFiles) ?? 'C:';
+    const defaultSize = await getPhysicalSectorSize(defaultDrive);
+    if (!defaultSize || defaultSize <= MAX_SECTOR_SIZE) {
+        return [];
+    }
+    const problem = `${defaultDrive} reports a physical sector size of ${defaultSize} bytes, which SQL Server can't use.`;
+    const tempDrive = driveOf(process.env.RUNNER_TEMP);
+    const tempSize = tempDrive && tempDrive !== defaultDrive ? await getPhysicalSectorSize(tempDrive) : undefined;
+    if (!tempDrive || !tempSize || tempSize > MAX_SECTOR_SIZE) {
+        core.warning(`${problem} No other volume with a supported sector size was found, so setup is likely to fail. See https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/database-file-operations/troubleshoot-os-4kb-disk-sector-size`);
+        return [];
+    }
+    const directory = `${tempDrive}\\Microsoft SQL Server`;
+    core.warning(`${problem} Installing the instance in ${directory} instead. To choose the directory yourself, set /INSTANCEDIR and /INSTALLSQLDATADIR in install-arguments.`);
+    return [`/INSTANCEDIR="${directory}"`, `/INSTALLSQLDATADIR="${directory}"`];
+}

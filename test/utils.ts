@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 // static imports bind before the mock.module() calls below, so this is the real readFile
 import { readFile } from 'node:fs/promises';
 import { win32 } from 'node:path';
-import { describe, it, beforeEach, mock } from 'node:test';
+import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { load } from 'js-yaml';
 import type { Inputs } from '../src/utils.ts';
@@ -915,6 +915,145 @@ describe('utils', () => {
                 assert.equal(readdir.mock.callCount(), 0);
                 assert.equal(globCreate.mock.callCount(), 1);
             });
+        });
+    });
+    describe('.findInstanceDirArgs()', () => {
+        const env = { ProgramFiles: process.env.ProgramFiles, RUNNER_TEMP: process.env.RUNNER_TEMP };
+        let sectorSizes: Record<string, [number, number] | undefined>;
+        // the output of fsutil fsinfo sectorinfo, with a file system value that must be ignored
+        const sectorInfo = ([atomicity, performance]: [number, number]) => [
+            'LogicalBytesPerSector :                                 512',
+            `PhysicalBytesPerSectorForAtomicity :                    ${atomicity}`,
+            `PhysicalBytesPerSectorForPerformance :                  ${performance}`,
+            'FileSystemEffectivePhysicalBytesPerSectorForAtomicity : 16384',
+            'Device Alignment :                                      Aligned (0x000)',
+            'Partition alignment on device :                         Aligned (0x000)',
+            'No Seek Penalty',
+            'Trim Supported',
+            '',
+        ].join('\r\n');
+        const fsutilCalls = () => exec.getExecOutput.mock.calls.map((c) => c.arguments.slice(0, 2));
+        beforeEach(() => {
+            process.env.ProgramFiles = 'C:\\Program Files';
+            process.env.RUNNER_TEMP = 'D:\\a\\_temp';
+            sectorSizes = { 'C:': [8192, 8192], 'D:': [4096, 4096] };
+            exec.getExecOutput.mock.mockImplementation(async (_tool: string, args: string[]) => {
+                const sizes = sectorSizes[args[2]];
+                if (!sizes) {
+                    return { exitCode: 1, stdout: 'Error:  The system cannot find the path specified.\r\n', stderr: '' };
+                }
+                return { exitCode: 0, stdout: sectorInfo(sizes), stderr: '' };
+            });
+        });
+        afterEach(() => {
+            for (const [name, value] of Object.entries(env)) {
+                if (value === undefined) {
+                    delete process.env[name];
+                } else {
+                    process.env[name] = value;
+                }
+            }
+        });
+        it('does nothing if the default volume reports 4 KB sectors', async () => {
+            sectorSizes['C:'] = [4096, 4096];
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.deepEqual(exec.getExecOutput.mock.calls.map((c) => c.arguments), [
+                ['fsutil', ['fsinfo', 'sectorinfo', 'C:'], { ignoreReturnCode: true, silent: true }],
+            ]);
+            assert.equal(core.warning.mock.callCount(), 0);
+        });
+        it('does nothing if the default volume reports 512-byte sectors', async () => {
+            sectorSizes['C:'] = [512, 512];
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 0);
+        });
+        it('moves the instance to the volume of the temporary directory', async () => {
+            assert.deepEqual(await utils.findInstanceDirArgs(['/SQLTEMPDBFILECOUNT=4']), [
+                '/INSTANCEDIR="D:\\Microsoft SQL Server"',
+                '/INSTALLSQLDATADIR="D:\\Microsoft SQL Server"',
+            ]);
+            assert.deepEqual(fsutilCalls(), [
+                ['fsutil', ['fsinfo', 'sectorinfo', 'C:']],
+                ['fsutil', ['fsinfo', 'sectorinfo', 'D:']],
+            ]);
+            assert.equal(core.warning.mock.callCount(), 1);
+            assert.equal(core.warning.mock.calls[0].arguments[0], 'C: reports a physical sector size of 8192 bytes, which SQL Server can\'t use. Installing the instance in D:\\Microsoft SQL Server instead. To choose the directory yourself, set /INSTANCEDIR and /INSTALLSQLDATADIR in install-arguments.');
+        });
+        it('uses the larger of the two physical sector sizes', async () => {
+            sectorSizes['C:'] = [4096, 8192];
+            assert.equal((await utils.findInstanceDirArgs([])).length, 2);
+            sectorSizes['C:'] = [8192, 4096];
+            assert.equal((await utils.findInstanceDirArgs([])).length, 2);
+        });
+        it('checks the volume of the Program Files directory', async () => {
+            process.env.ProgramFiles = 'e:\\Program Files';
+            sectorSizes = { 'E:': [8192, 8192], 'D:': [4096, 4096] };
+            assert.deepEqual(await utils.findInstanceDirArgs([]), [
+                '/INSTANCEDIR="D:\\Microsoft SQL Server"',
+                '/INSTALLSQLDATADIR="D:\\Microsoft SQL Server"',
+            ]);
+            assert.equal(fsutilCalls()[0][1][2], 'E:');
+        });
+        it('checks C: if the Program Files directory is not set', async () => {
+            delete process.env.ProgramFiles;
+            await utils.findInstanceDirArgs([]);
+            assert.equal(fsutilCalls()[0][1][2], 'C:');
+        });
+        for (const arg of [
+            '/INSTANCEDIR="E:\\SQL"',
+            '/INSTALLSQLDATADIR="E:\\SQL"',
+            '/instancedir=E:\\SQL',
+            '-INSTALLSQLDATADIR=E:\\SQL',
+        ]) {
+            it(`does nothing if install-arguments has ${arg}`, async () => {
+                assert.deepEqual(await utils.findInstanceDirArgs(['/SQLTEMPDBFILECOUNT=4', arg]), []);
+                assert.equal(exec.getExecOutput.mock.callCount(), 0);
+                assert.equal(core.warning.mock.callCount(), 0);
+            });
+        }
+        it('does not treat other directory arguments as a choice of instance directory', async () => {
+            assert.equal((await utils.findInstanceDirArgs(['/SQLUSERDBDIR="E:\\Data"', '/INSTANCEDIRECTORY=E:\\SQL'])).length, 2);
+        });
+        it('warns and does nothing if the temporary directory volume also reports large sectors', async () => {
+            sectorSizes['D:'] = [8192, 8192];
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 1);
+            assert.equal(core.warning.mock.calls[0].arguments[0], 'C: reports a physical sector size of 8192 bytes, which SQL Server can\'t use. No other volume with a supported sector size was found, so setup is likely to fail. See https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/database-file-operations/troubleshoot-os-4kb-disk-sector-size');
+        });
+        it('warns and does nothing if the temporary directory is on the default volume', async () => {
+            process.env.RUNNER_TEMP = 'C:\\actions-runner\\_work\\_temp';
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(exec.getExecOutput.mock.callCount(), 1);
+            assert.equal(core.warning.mock.callCount(), 1);
+        });
+        it('warns and does nothing if there is no temporary directory', async () => {
+            delete process.env.RUNNER_TEMP;
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(exec.getExecOutput.mock.callCount(), 1);
+            assert.equal(core.warning.mock.callCount(), 1);
+        });
+        it('warns and does nothing if the sector size of the temporary directory volume is unknown', async () => {
+            sectorSizes['D:'] = undefined;
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 1);
+        });
+        it('does nothing if fsutil fails', async () => {
+            sectorSizes['C:'] = undefined;
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 0);
+        });
+        it('does nothing if fsutil does not report the physical sector sizes', async () => {
+            exec.getExecOutput.mock.mockImplementation(async () => ({ exitCode: 0, stdout: 'LogicalBytesPerSector : 512\r\n', stderr: '' }));
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 0);
+        });
+        it('does nothing if fsutil cannot be run', async () => {
+            exec.getExecOutput.mock.mockImplementation(async () => {
+                throw new Error('Unable to locate executable file: fsutil');
+            });
+            assert.deepEqual(await utils.findInstanceDirArgs([]), []);
+            assert.equal(core.warning.mock.callCount(), 0);
+            assert.ok(core.debug.mock.calls.some((c) => String(c.arguments[0]).includes('Unable to locate executable file: fsutil')));
         });
     });
 });
