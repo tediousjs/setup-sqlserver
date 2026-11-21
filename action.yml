@@ -21,7 +21,7 @@ inputs:
   install-arguments:
     description: 'Any custom install arguments you wish to use. These must be in the format of "/ARG=VAL".'
   wait-for-ready:
-    description: 'Wait for the database to respond successfully to queries before completing the action. A maximum of 10 attempts is made.'
+    description: 'Wait for the database to respond successfully to queries before completing the action. The action tries to log in up to 6 times, with waits of 1, 2, 4, 8 and 16 seconds between the attempts. The check uses sqlcmd. If the database is not ready, or sqlcmd cannot run, for example because it is not on the PATH, the action warns and continues. If setup asked for a reboot (exit code 3010), the action fails instead.'
     default: 'true'
   install-updates:
     description: 'Attempt to install latest cumulative updates during the installation process (not available for all versions).'

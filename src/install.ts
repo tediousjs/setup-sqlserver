@@ -188,33 +188,18 @@ export default async function install() {
         core.setOutput('sa-password', password);
         core.setOutput('instance-name', instanceName);
         if (wait) {
-            core.startGroup('Waiting for database');
-            let res = await waitForDatabase(password);
-            let count = 0;
-            while (res !== 0 && count < 5) {
-                const waitTime = Math.pow(2, count);
-                core.debug(`Database not ready, waiting ${waitTime} second${waitTime === 1 ? '' : 's'}`);
-                await new Promise((resolve) => setTimeout(resolve, waitTime * 1000));
-                count++;
-                core.debug(`Checking database, attempt ${count}`);
-                res = await waitForDatabase(password);
-                if (res === 0) {
-                    break;
+            const readiness = await core.group('Waiting for database', () => waitForDatabase(password));
+            if (readiness.status === 'unavailable') {
+                if (rebootRequired) {
+                    throw new Error(`Unable to check that the database is ready after setup requested a reboot (exit code 3010) that could not be performed, because sqlcmd could not run: ${readiness.reason}`);
                 }
-            }
-            if (res === 0) {
-                if (count) {
-                    core.info(`Database ready after ${count} attempts`);
-                } else {
-                    core.info(`Database ready`);
+                core.warning(`Skipping the readiness check because sqlcmd could not run: ${readiness.reason}`);
+            } else if (readiness.status === 'not-ready') {
+                if (rebootRequired) {
+                    throw new Error(`Database not ready after ${readiness.attempts} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
                 }
-            } else if (rebootRequired) {
-                core.endGroup();
-                throw new Error(`Database not ready after ${count} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
-            } else {
-                core.warning(`Database not ready after ${count} attempts, moving on`);
+                core.warning(`Database not ready after ${readiness.attempts} attempts, moving on`);
             }
-            core.endGroup();
         }
         core.info(`SQL Server ${version} installed`);
     } catch (e) {

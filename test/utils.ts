@@ -323,18 +323,90 @@ describe('utils', () => {
         });
     });
     describe('.waitForDatabase()', () => {
-        it('resolves', async () => {
+        it('is ready when the first login succeeds', async () => {
             const res = await utils.waitForDatabase('password');
-            assert.equal(res, 0);
+            assert.deepEqual(res, { status: 'ready', attempts: 1 });
+            assert.equal(exec.exec.mock.callCount(), 1);
+            assert.equal(delay.mock.callCount(), 0);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready']);
         });
-        it('passes a login timeout to sqlcmd', async () => {
-            await utils.waitForDatabase('password');
+        it('passes the password and a login timeout to sqlcmd', async () => {
+            await utils.waitForDatabase('Ab1 cd\\');
             assert.equal(exec.exec.mock.callCount(), 1);
             const call = exec.exec.mock.calls[0];
             assert.equal(call.arguments[0], 'sqlcmd');
-            const args = call.arguments[1] as string[];
-            const idx = args.indexOf('-l');
-            assert.ok(idx >= 0 && args[idx + 1] === '5');
+            assert.deepEqual(call.arguments[1], ['-S', '(local)', '-U', 'sa', '-P', 'Ab1 cd\\', '-l', '5', '-Q', 'SELECT @@VERSION']);
+            assert.deepEqual(call.arguments[2], { ignoreReturnCode: true });
+        });
+        it('retries with an exponential backoff until the database is ready', async () => {
+            let call = 0;
+            exec.exec.mock.mockImplementation(async () => (++call >= 3 ? 0 : 1));
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { status: 'ready', attempts: 3 });
+            assert.equal(exec.exec.mock.callCount(), 3);
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000]);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 3 attempts']);
+        });
+        it('is ready when the last attempt succeeds', async () => {
+            let call = 0;
+            exec.exec.mock.mockImplementation(async () => (++call >= 6 ? 0 : 1));
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { status: 'ready', attempts: 6 });
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000, 4000, 8000, 16000]);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 6 attempts']);
+        });
+        it('gives up after 6 attempts', async () => {
+            exec.exec.mock.mockImplementation(async () => 1);
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { status: 'not-ready', attempts: 6 });
+            assert.equal(exec.exec.mock.callCount(), 6);
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000, 4000, 8000, 16000]);
+            assert.equal(core.info.mock.callCount(), 0);
+            assert.deepEqual(core.debug.mock.calls.map((c) => c.arguments[0]), [
+                'Database not ready, waiting 1 second',
+                'Checking database, attempt 2 of 6',
+                'Database not ready, waiting 2 seconds',
+                'Checking database, attempt 3 of 6',
+                'Database not ready, waiting 4 seconds',
+                'Checking database, attempt 4 of 6',
+                'Database not ready, waiting 8 seconds',
+                'Checking database, attempt 5 of 6',
+                'Database not ready, waiting 16 seconds',
+                'Checking database, attempt 6 of 6',
+            ]);
+        });
+        it('matches the wait-for-ready description', async () => {
+            exec.exec.mock.mockImplementation(async () => 1);
+            const res = await utils.waitForDatabase('password');
+            assert.equal(res.status, 'not-ready');
+            const { attempts } = res as { attempts: number };
+            const waits = delay.mock.calls.map((c) => c.arguments[0] / 1000);
+            const description = String((action.inputs['wait-for-ready'] as { description: string }).description);
+            assert.ok(description.includes(`up to ${attempts} times`), description);
+            assert.ok(description.includes(`${waits.slice(0, -1).join(', ')} and ${waits.at(-1)} seconds`), description);
+        });
+        it('is unavailable when sqlcmd cannot run', async () => {
+            exec.exec.mock.mockImplementation(async () => {
+                throw new Error('Unable to locate executable file: sqlcmd.');
+            });
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { status: 'unavailable', reason: 'Unable to locate executable file: sqlcmd.' });
+            assert.equal(exec.exec.mock.callCount(), 1);
+            assert.equal(delay.mock.callCount(), 0);
+            assert.equal(core.info.mock.callCount(), 0);
+        });
+        it('stops retrying when sqlcmd stops running', async () => {
+            let call = 0;
+            exec.exec.mock.mockImplementation(async () => {
+                if (++call > 1) {
+                    throw 'spawn failed';
+                }
+                return 1;
+            });
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { status: 'unavailable', reason: 'spawn failed' });
+            assert.equal(exec.exec.mock.callCount(), 2);
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000]);
         });
     });
     describe('.downloadBoxInstaller()', () => {
