@@ -33,6 +33,7 @@ const utils = {
     downloadBoxInstaller: mock.fn(async () => 'C:\\tmp\\box\\setup.exe'),
     downloadSseiInstaller: mock.fn(async () => 'C:\\tmp\\ssei\\setup.exe'),
     downloadUpdateInstaller: mock.fn(async () => 'C:\\tmp\\exe\\sqlupdate.exe'),
+    findInstanceDirArgs: mock.fn(async () => [] as string[]),
     waitForDatabase: mock.fn(async () => 0),
     downloadTool: mock.fn(async () => ''),
 };
@@ -72,7 +73,7 @@ function resetAllMocks() {
         installNativeClient, installOdbc,
         utils.gatherInputs, utils.getOsVersion, utils.gatherSummaryFiles, utils.gatherErrorLogs,
         utils.downloadExeInstaller, utils.downloadBoxInstaller,
-        utils.downloadSseiInstaller, utils.downloadUpdateInstaller,
+        utils.downloadSseiInstaller, utils.downloadUpdateInstaller, utils.findInstanceDirArgs,
         utils.waitForDatabase, utils.downloadTool,
     ];
     for (const fn of fns) {
@@ -97,6 +98,7 @@ describe('install', () => {
         utils.downloadBoxInstaller.mock.mockImplementation(async () => 'C:\\tmp\\box\\setup.exe');
         utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:\\tmp\\ssei\\setup.exe');
         utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:\\tmp\\exe\\sqlupdate.exe');
+        utils.findInstanceDirArgs.mock.mockImplementation(async () => []);
         utils.waitForDatabase.mock.mockImplementation(async () => 0);
 
         VERSIONS.clear();
@@ -193,6 +195,24 @@ describe('install', () => {
             ]);
         });
     }
+    it('passes the instance directory arguments before the version and user arguments', async () => {
+        VERSIONS.set('box', { ...VERSIONS.get('box')!, installArgs: ['/ENABLERANU=1'] });
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ installArgs: ['/SQLTEMPDBFILECOUNT=4'] }));
+        utils.findInstanceDirArgs.mock.mockImplementation(async () => [
+            '/INSTANCEDIR="D:\\Microsoft SQL Server"',
+            '/INSTALLSQLDATADIR="D:\\Microsoft SQL Server"',
+        ]);
+        await install();
+        assert.equal(utils.findInstanceDirArgs.mock.callCount(), 1);
+        assert.deepEqual(utils.findInstanceDirArgs.mock.calls[0].arguments, [['/SQLTEMPDBFILECOUNT=4']]);
+        assert.deepEqual(exec.exec.mock.calls[0].arguments[1].slice(-5), [
+            '/IACCEPTSQLSERVERLICENSETERMS',
+            '/INSTANCEDIR="D:\\Microsoft SQL Server"',
+            '/INSTALLSQLDATADIR="D:\\Microsoft SQL Server"',
+            '/ENABLERANU=1',
+            '/SQLTEMPDBFILECOUNT=4',
+        ]);
+    });
     it('warns and waits for the database if setup requests a reboot', async () => {
         exec.exec.mock.mockImplementation(async () => 3010);
         await install();
