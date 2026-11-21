@@ -108,10 +108,40 @@ When `install-updates: true` is set for a version with a configured update URL,
 the action downloads the update before starting SQL Server setup. Download-page
 requests are tried up to three times on network errors, timeouts, or non-2xx
 responses (including 403 and 404), with 5- and 10-second delays before retries.
+When Microsoft refuses a page request with a 403 and no proxy applies, the
+action immediately tries the page again with Node's built-in `fetch`. Microsoft
+has accepted `fetch` at times when it refused the HTTP client of the action.
 If the update still can't be downloaded, the action logs a warning with the
 reason and installs SQL Server without updates. Update URLs are configured for
 SQL Server 2016 and later, including 2025 (and so the default, `'latest'`);
 older versions skip updates.
+
+#### Proxies
+
+The action fetches the download page with the same HTTP client as its
+downloads. So the page request follows the runner's proxy settings
+(`HTTPS_PROXY` and `NO_PROXY`). When the action uses a proxy for the page, it
+says so in the log. If the action can't fetch the page through the proxy, set
+`NO_PROXY` on the setup-sqlserver step to fetch the page directly:
+
+```yaml
+- uses: tediousjs/setup-sqlserver@v4
+  with:
+    install-updates: true
+  env:
+    NO_PROXY: www.microsoft.com
+```
+
+Only the download pages are on `www.microsoft.com`, so this doesn't change how
+the action downloads the installers and updates. Through a proxy, the action
+doesn't try `fetch` after a 403, because `fetch` doesn't use the proxy.
+
+The `NO_PROXY` of the step replaces the runner's value for that step only. So
+add any other hosts from the runner's list that the step needs. Set it on the
+step, not on the job, so that the other steps keep the runner's value. Each
+entry also matches its subdomains, so `microsoft.com` or `.microsoft.com` also
+sends the installer and update downloads directly. A `*.` wildcard doesn't
+work.
 
 ### Caching
 
