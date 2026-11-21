@@ -167,6 +167,15 @@ jobs:
             sqlserver: sql-2019
             variant: no-updates
             install-updates: 'false'
+          # choosing the directories turns off the move away from a volume with large sectors, and checks the setup
+          # switches that the move uses on every run, not only on the runners that need it
+          - os: windows-2022
+            sqlserver: sql-2022
+            variant: custom-dirs
+            install-arguments: |
+              /INSTANCEDIR="D:\SQL Server"
+              /INSTALLSQLDATADIR="D:\SQL Server"
+            data-root: 'D:\SQL Server\'
     name: runaction (${{ matrix.os }}, ${{ matrix.sqlserver }}${{ matrix.variant && format(', {0}', matrix.variant) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -205,6 +214,7 @@ jobs:
           odbc-version: ${{ matrix.odbc-version || '17' }}
           install-updates: ${{ matrix.install-updates || 'true' }}
           wait-for-ready: ${{ matrix.wait-for-ready || 'true' }}
+          install-arguments: ${{ matrix.install-arguments || '' }}
       # the action only warns when the database isn't ready, so check that the instance it reports really works:
       # log in over TCP with its sa-password output and compare what the server reports with what was asked for
       - name: Check the installed instance
@@ -216,6 +226,7 @@ jobs:
           SQLSERVER_VERSION: ${{ matrix.sqlserver }}
           ODBC_VERSION: ${{ matrix.odbc-version || '17' }}
           INSTALL_UPDATES: ${{ matrix.install-updates || 'true' }}
+          DATA_ROOT: ${{ matrix.data-root || '' }}
         run: |
           # handle failures here instead of stopping at the first error, so every check reports
           $ErrorActionPreference = 'Continue'
@@ -224,7 +235,7 @@ jobs:
             Write-Host "::error::The instance-name output is '$env:INSTANCE_NAME', expected 'MSSQLSERVER'"
             $failed = $true
           }
-          $query = "SET NOCOUNT ON; SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(128)), CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(128)), ISNULL(CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(128)), ''), CAST(SERVERPROPERTY('Collation') AS nvarchar(128))"
+          $query = "SET NOCOUNT ON; SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(128)), CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(128)), ISNULL(CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(128)), ''), CAST(SERVERPROPERTY('Collation') AS nvarchar(128)), CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(260))"
           $row = $null
           for ($attempt = 1; $attempt -le 12; $attempt++) {
             $output = sqlcmd -S 'tcp:127.0.0.1,1433' -U sa -b -l 5 -h -1 -W -s '|' -Q $query 2>&1
@@ -239,8 +250,12 @@ jobs:
             Write-Host "::error::Could not log in as sa over TCP with the sa-password output"
             exit 1
           }
-          $major, $level, $updateLevel, $collation = "$row".Trim().Split('|')
-          Write-Host "SQL Server major version $major, level $level, update level '$updateLevel', collation $collation"
+          $major, $level, $updateLevel, $collation, $dataPath = "$row".Trim().Split('|')
+          Write-Host "SQL Server major version $major, level $level, update level '$updateLevel', collation $collation, data path $dataPath"
+          if ($env:DATA_ROOT -and -not $dataPath.StartsWith($env:DATA_ROOT, [StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "::error::SQL Server reports data path $dataPath, expected a path in $env:DATA_ROOT"
+            $failed = $true
+          }
           $expectedMajor = @{ 'sql-latest' = '17'; 'sql-2025' = '17'; 'sql-2022' = '16'; 'sql-2019' = '15'; 'sql-2017' = '14'; 'sql-2016' = '13' }[$env:SQLSERVER_VERSION]
           if ($major -ne $expectedMajor) {
             Write-Host "::error::SQL Server reports major version $major, expected $expectedMajor for $env:SQLSERVER_VERSION"
@@ -278,6 +293,8 @@ jobs:
           path: |
             C:/Program Files/Microsoft SQL Server/*/Setup Bootstrap/Log/
             C:/Program Files/Microsoft SQL Server/MSSQL*/MSSQL/Log/
+            D:/Microsoft SQL Server/MSSQL*/MSSQL/Log/
+            D:/SQL Server/MSSQL*/MSSQL/Log/
           if-no-files-found: ignore
   release:
     name: Release
