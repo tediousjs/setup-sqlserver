@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.1.2](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.1...v4.1.2) (2026-11-21)
+
+### Bug Fixes
+
+* install SQL Server on another volume when C: has large sectors ([aa89b69](https://github.com/tediousjs/setup-sqlserver/commit/aa89b6953dfeb572fe07874485b936325eaad782))
+
 ## [4.1.1](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.0...v4.1.1) (2026-10-13)
 
 ### Bug Fixes
