@@ -34,7 +34,7 @@ const utils = {
     downloadSseiInstaller: mock.fn(async () => 'C:\\tmp\\ssei\\setup.exe'),
     downloadUpdateInstaller: mock.fn(async () => 'C:\\tmp\\exe\\sqlupdate.exe'),
     findInstanceDirArgs: mock.fn(async () => [] as string[]),
-    waitForDatabase: mock.fn(async () => 0),
+    waitForDatabase: mock.fn(async () => ({ ready: true, retries: 0 })),
     downloadTool: mock.fn(async () => ''),
 };
 
@@ -99,7 +99,7 @@ describe('install', () => {
         utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:\\tmp\\ssei\\setup.exe');
         utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:\\tmp\\exe\\sqlupdate.exe');
         utils.findInstanceDirArgs.mock.mockImplementation(async () => []);
-        utils.waitForDatabase.mock.mockImplementation(async () => 0);
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: true, retries: 0 }));
 
         VERSIONS.clear();
         VERSIONS.set('box', {
@@ -238,18 +238,12 @@ describe('install', () => {
         assert.deepEqual(core.setOutput.mock.calls.map((c) => c.arguments), [['sa-password', 'secret password'], ['instance-name', 'MSSQLSERVER']]);
     });
     it('fails if the database is not ready after setup requests a reboot', async () => {
-        const original = globalThis.setTimeout;
-        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
-        try {
-            exec.exec.mock.mockImplementation(async () => 3010);
-            utils.waitForDatabase.mock.mockImplementation(async () => 1);
-            await assert.rejects(() => install(), {
-                message: 'Database not ready after 5 attempts; setup requested a reboot (exit code 3010) that could not be performed',
-            });
-        } finally {
-            globalThis.setTimeout = original;
-        }
-        assert.equal(utils.waitForDatabase.mock.callCount(), 6);
+        exec.exec.mock.mockImplementation(async () => 3010);
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, retries: 5 }));
+        await assert.rejects(() => install(), {
+            message: 'Database not ready after 5 attempts; setup requested a reboot (exit code 3010) that could not be performed',
+        });
+        assert.equal(utils.waitForDatabase.mock.callCount(), 1);
         assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
         assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
     });
@@ -375,32 +369,13 @@ describe('install', () => {
         assert.equal(exec.exec.mock.callCount(), 1);
         assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:\\tmp\\exe\\setup.exe"');
     });
-    it('waits for max of 10 attempts', async () => {
-        const original = globalThis.setTimeout;
-        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
-        try {
-            utils.waitForDatabase.mock.mockImplementation(async () => 1);
-            await install();
-        } finally {
-            globalThis.setTimeout = original;
-        }
-        assert.equal(utils.waitForDatabase.mock.callCount(), 6);
+    it('warns and carries on if the database is not ready', async () => {
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, retries: 5 }));
+        await install();
+        assert.equal(utils.waitForDatabase.mock.callCount(), 1);
         assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Database not ready after 5 attempts, moving on']);
-    });
-    it('waits until db is ready', async () => {
-        const original = globalThis.setTimeout;
-        (globalThis as any).setTimeout = (cb: () => void) => { cb(); return 0 as any; };
-        try {
-            let call = 0;
-            utils.waitForDatabase.mock.mockImplementation(async () => {
-                call++;
-                return call >= 3 ? 0 : 1;
-            });
-            await install();
-        } finally {
-            globalThis.setTimeout = original;
-        }
-        assert.equal(utils.waitForDatabase.mock.callCount(), 3);
+        assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], false);
     });
     it('fetches summary files', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));

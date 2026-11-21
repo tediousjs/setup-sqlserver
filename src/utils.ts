@@ -128,12 +128,47 @@ export function downloadTool(url: string, extName?: string) {
 }
 
 /**
- * Helper function that uses sqlcmd to check if the SQL server is running.
+ * The outcome of the readiness check.
+ */
+export interface DatabaseReadiness {
+    ready: boolean;
+    retries: number;
+}
+
+/**
+ * Wait for the SQL Server instance to accept logins, retrying with an exponential backoff.
  *
  * @param {string} password
- * @returns {number} Status code
+ * @returns {Promise<DatabaseReadiness>}
  */
-export function waitForDatabase(password: string) {
+export async function waitForDatabase(password: string): Promise<DatabaseReadiness> {
+    let res = await queryDatabase(password);
+    let count = 0;
+    while (res !== 0 && count < 5) {
+        const waitTime = Math.pow(2, count);
+        core.debug(`Database not ready, waiting ${waitTime} second${waitTime === 1 ? '' : 's'}`);
+        await delay(waitTime * 1000);
+        count++;
+        core.debug(`Checking database, attempt ${count}`);
+        res = await queryDatabase(password);
+    }
+    if (res === 0) {
+        if (count) {
+            core.info(`Database ready after ${count} attempts`);
+        } else {
+            core.info(`Database ready`);
+        }
+    }
+    return { ready: res === 0, retries: count };
+}
+
+/**
+ * Use sqlcmd to check once if the SQL Server instance accepts logins.
+ *
+ * @param {string} password
+ * @returns {Promise<number>} The sqlcmd exit code
+ */
+function queryDatabase(password: string) {
     return exec.exec('sqlcmd', [
         '-S',
         '(local)',

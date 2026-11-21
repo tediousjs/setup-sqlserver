@@ -323,18 +323,37 @@ describe('utils', () => {
         });
     });
     describe('.waitForDatabase()', () => {
-        it('resolves', async () => {
+        it('is ready when the first login succeeds', async () => {
             const res = await utils.waitForDatabase('password');
-            assert.equal(res, 0);
+            assert.deepEqual(res, { ready: true, retries: 0 });
+            assert.equal(exec.exec.mock.callCount(), 1);
+            assert.equal(delay.mock.callCount(), 0);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready']);
         });
-        it('passes a login timeout to sqlcmd', async () => {
-            await utils.waitForDatabase('password');
+        it('passes the password and a login timeout to sqlcmd', async () => {
+            await utils.waitForDatabase('Ab1 cd\\');
             assert.equal(exec.exec.mock.callCount(), 1);
             const call = exec.exec.mock.calls[0];
             assert.equal(call.arguments[0], 'sqlcmd');
-            const args = call.arguments[1] as string[];
-            const idx = args.indexOf('-l');
-            assert.ok(idx >= 0 && args[idx + 1] === '5');
+            assert.deepEqual(call.arguments[1], ['-S', '(local)', '-U', 'sa', '-P', 'Ab1 cd\\', '-l', '5', '-Q', 'SELECT @@VERSION']);
+            assert.deepEqual(call.arguments[2], { ignoreReturnCode: true });
+        });
+        it('retries with an exponential backoff until the database is ready', async () => {
+            let call = 0;
+            exec.exec.mock.mockImplementation(async () => (++call >= 3 ? 0 : 1));
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { ready: true, retries: 2 });
+            assert.equal(exec.exec.mock.callCount(), 3);
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000]);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 2 attempts']);
+        });
+        it('gives up after 5 retries', async () => {
+            exec.exec.mock.mockImplementation(async () => 1);
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { ready: false, retries: 5 });
+            assert.equal(exec.exec.mock.callCount(), 6);
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000, 4000, 8000, 16000]);
+            assert.equal(core.info.mock.callCount(), 0);
         });
     });
     describe('.downloadBoxInstaller()', () => {
