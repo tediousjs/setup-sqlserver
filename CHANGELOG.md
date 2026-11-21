@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.1.3](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.2...v4.1.3) (2026-11-21)
+
+### Bug Fixes
+
+* mask the SA password in the action logs ([883ab8c](https://github.com/tediousjs/setup-sqlserver/commit/883ab8cab95f5bb3d988ac7928038223d13e1826))
+* pass sa-password and db-collation to SQL Server setup unchanged ([19bd666](https://github.com/tediousjs/setup-sqlserver/commit/19bd6666f45a6e70e97ae6a1aaa5a45515b71690))
+* reject an sa-password or db-collation that contains a double quote ([0b08c57](https://github.com/tediousjs/setup-sqlserver/commit/0b08c57cfa2415d96cc333304d1645fe525cee9c))
+
 ## [4.1.2](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.1...v4.1.2) (2026-11-21)
 
 ### Bug Fixes
