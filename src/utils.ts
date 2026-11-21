@@ -455,6 +455,28 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
 }
 
 /**
+ * Escape the glob characters in a literal path, so that a glob pattern matches it exactly. On Windows, @actions/glob
+ * has no escape character, so wrap each glob character in [].
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+function escapeGlob(path: string): string {
+    return path.replace(/[[*?]/g, '[$&]');
+}
+
+/**
+ * The glob pattern of the SQL Server directory in Program Files, where setup writes its logs and installs instances
+ * by default. The Program Files directory can be on a drive other than C:, so use the ProgramFiles environment
+ * variable.
+ *
+ * @returns {string}
+ */
+function sqlServerDirPattern(): string {
+    return win32.join(escapeGlob(process.env.ProgramFiles || 'C:\\Program Files'), 'Microsoft SQL Server');
+}
+
+/**
  * Gather installation summary file. Used after installation to output summary data.
  * Optionally can also fetch the Detail.txt file (useful for debugging errors).
  *
@@ -466,7 +488,8 @@ export async function downloadUpdateInstaller(config: VersionConfig): Promise<st
 export async function gatherSummaryFiles(withDetail: boolean = false): Promise<string[]> {
     // The summary file is in a different location depending on the version of SQL Server being installed,
     // use glob to find it.
-    const summaryFiles = await glob.create('C:/Program Files/Microsoft SQL Server/[0-9]*/Setup Bootstrap/Log/Summary.txt')
+    const logDir = win32.join(sqlServerDirPattern(), '[0-9]*', 'Setup Bootstrap', 'Log');
+    const summaryFiles = await glob.create(win32.join(logDir, 'Summary.txt'))
         .then((globber) => globber.glob());
     if (summaryFiles.length) {
         core.debug(`Found files: ${summaryFiles.join(', ')}`);
@@ -476,7 +499,7 @@ export async function gatherSummaryFiles(withDetail: boolean = false): Promise<s
     // try to find detail file, this is in a directory that contains the installation date_time
     // sort the files and then pull the last one off (as that is likely to be the most recent
     // installation attempt)
-    const detailFile = withDetail ? await glob.create('C:/Program Files/Microsoft SQL Server/[0-9]*/Setup Bootstrap/Log/[0-9]*_[0-9]*/Detail.txt')
+    const detailFile = withDetail ? await glob.create(win32.join(logDir, '[0-9]*_[0-9]*', 'Detail.txt'))
         .then((globber) => globber.glob())
         .then((files) => files.sort())
         .then((files) => {
@@ -512,7 +535,8 @@ export async function gatherErrorLogs(instanceName: string): Promise<string[]> {
             .filter((file) => file.startsWith(logName) && /^(\.\d+)?$/.test(file.slice(logName.length)))
             .map((file) => win32.join(logDirectory, file));
     } else {
-        errorLogs = await glob.create(`C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.${instanceName}/MSSQL/Log/ERRORLOG*`)
+        const instanceDir = `MSSQL[0-9]*.${escapeGlob(instanceName)}`;
+        errorLogs = await glob.create(win32.join(sqlServerDirPattern(), instanceDir, 'MSSQL', 'Log', 'ERRORLOG*'))
             .then((globber) => globber.glob());
     }
     if (errorLogs.length) {

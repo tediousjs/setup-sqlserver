@@ -67,6 +67,23 @@ mock.module('../src/crypto.ts', { namedExports: { generateFileHash } });
 
 const utils = await import('../src/utils.ts');
 
+/**
+ * Set the ProgramFiles environment variable for a suite's tests, and restore it after each one.
+ */
+function useProgramFiles(value: string) {
+    const original = process.env.ProgramFiles;
+    beforeEach(() => {
+        process.env.ProgramFiles = value;
+    });
+    afterEach(() => {
+        if (original === undefined) {
+            delete process.env.ProgramFiles;
+        } else {
+            process.env.ProgramFiles = original;
+        }
+    });
+}
+
 function resetAll() {
     const fns = [
         core.getInput, core.getMultilineInput, core.getBooleanInput, core.setSecret,
@@ -888,10 +905,40 @@ describe('utils', () => {
         });
     });
     describe('.gatherSummaryFiles()', () => {
+        const logDir = 'C:\\Program Files\\Microsoft SQL Server\\[0-9]*\\Setup Bootstrap\\Log';
         let globFn: ReturnType<typeof mock.fn>;
+        useProgramFiles('C:\\Program Files');
         beforeEach(() => {
             globFn = mock.fn(async () => [] as string[]);
             globCreate.mock.mockImplementation(async () => ({ glob: globFn } as any));
+        });
+        it('searches the setup logs in the Program Files directory', async () => {
+            await utils.gatherSummaryFiles(true);
+            assert.deepEqual(globCreate.mock.calls.map((c) => c.arguments[0]), [
+                `${logDir}\\Summary.txt`,
+                `${logDir}\\[0-9]*_[0-9]*\\Detail.txt`,
+            ]);
+        });
+        it('searches the setup logs on the drive of the Program Files directory', async () => {
+            process.env.ProgramFiles = 'E:\\Program Files';
+            await utils.gatherSummaryFiles(true);
+            assert.deepEqual(globCreate.mock.calls.map((c) => c.arguments[0]), [
+                'E:\\Program Files\\Microsoft SQL Server\\[0-9]*\\Setup Bootstrap\\Log\\Summary.txt',
+                'E:\\Program Files\\Microsoft SQL Server\\[0-9]*\\Setup Bootstrap\\Log\\[0-9]*_[0-9]*\\Detail.txt',
+            ]);
+        });
+        it('searches C:\\Program Files if the Program Files directory is not set', async () => {
+            delete process.env.ProgramFiles;
+            await utils.gatherSummaryFiles();
+            assert.equal(globCreate.mock.calls[0].arguments[0], `${logDir}\\Summary.txt`);
+        });
+        it('escapes glob characters in the Program Files directory', async () => {
+            process.env.ProgramFiles = 'D:\\Apps [x64]*?';
+            await utils.gatherSummaryFiles(true);
+            assert.deepEqual(globCreate.mock.calls.map((c) => c.arguments[0]), [
+                'D:\\Apps [[]x64][*][?]\\Microsoft SQL Server\\[0-9]*\\Setup Bootstrap\\Log\\Summary.txt',
+                'D:\\Apps [[]x64][*][?]\\Microsoft SQL Server\\[0-9]*\\Setup Bootstrap\\Log\\[0-9]*_[0-9]*\\Detail.txt',
+            ]);
         });
         it('returns empty array if no files matched', async () => {
             const res = await utils.gatherSummaryFiles();
@@ -919,6 +966,7 @@ describe('utils', () => {
     });
     describe('.gatherErrorLogs()', () => {
         let globFn: ReturnType<typeof mock.fn>;
+        useProgramFiles('C:\\Program Files');
         beforeEach(() => {
             globFn = mock.fn(async () => [] as string[]);
             globCreate.mock.mockImplementation(async () => ({ glob: globFn } as any));
@@ -932,7 +980,16 @@ describe('utils', () => {
         it('searches the log directory of the instance', async () => {
             await utils.gatherErrorLogs('MSSQLSERVER');
             assert.equal(globCreate.mock.callCount(), 1);
-            assert.equal(globCreate.mock.calls[0].arguments[0], 'C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.MSSQLSERVER/MSSQL/Log/ERRORLOG*');
+            assert.equal(globCreate.mock.calls[0].arguments[0], 'C:\\Program Files\\Microsoft SQL Server\\MSSQL[0-9]*.MSSQLSERVER\\MSSQL\\Log\\ERRORLOG*');
+        });
+        it('escapes glob characters in the instance name', async () => {
+            await utils.gatherErrorLogs('A[1]*?');
+            assert.equal(globCreate.mock.calls[0].arguments[0], 'C:\\Program Files\\Microsoft SQL Server\\MSSQL[0-9]*.A[[]1][*][?]\\MSSQL\\Log\\ERRORLOG*');
+        });
+        it('searches the instance directory on the drive of the Program Files directory', async () => {
+            process.env.ProgramFiles = 'E:\\Program Files';
+            await utils.gatherErrorLogs('MSSQLSERVER');
+            assert.equal(globCreate.mock.calls[0].arguments[0], 'E:\\Program Files\\Microsoft SQL Server\\MSSQL[0-9]*.MSSQLSERVER\\MSSQL\\Log\\ERRORLOG*');
         });
         it('returns found files oldest first', async () => {
             const dir = 'C:/Program Files/Microsoft SQL Server/MSSQL16.MSSQLSERVER/MSSQL/Log';
@@ -1014,7 +1071,7 @@ describe('utils', () => {
                 assert.deepEqual(res, []);
                 assert.equal(exec.getExecOutput.mock.callCount(), 1);
                 assert.equal(globCreate.mock.callCount(), 1);
-                assert.equal(globCreate.mock.calls[0].arguments[0], 'C:/Program Files/Microsoft SQL Server/MSSQL[0-9]*.OTHER/MSSQL/Log/ERRORLOG*');
+                assert.equal(globCreate.mock.calls[0].arguments[0], 'C:\\Program Files\\Microsoft SQL Server\\MSSQL[0-9]*.OTHER\\MSSQL\\Log\\ERRORLOG*');
             });
             it('uses the default location if the startup parameters have no error log', async () => {
                 parameters = parameters.replace(/^.*SQLArg1.*$/m, '');
