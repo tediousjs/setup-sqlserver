@@ -13,7 +13,7 @@ inputs:
   odbc-version:
     description: 'Version of ODBC to install. Supported versions: 17, 18.'
   sa-password:
-    description: 'The SA user password to use.'
+    description: 'The SA user password to use. It must not contain a double quote, which SQL Server setup cannot pass on.'
     default: 'yourStrong(!)Password'
   db-collation:
     description: 'The database collation to use.'

@@ -219,10 +219,28 @@ describe('utils', () => {
             assert.deepEqual(core.setSecret.mock.calls.map((c) => c.arguments), [['secret password']]);
         });
         it('also masks the escaped form that the command lines show', () => {
-            setupInputs({ 'sa-password': 'Ab1"cd\\' });
+            setupInputs({ 'sa-password': 'Ab1 cd\\' });
             const res = utils.gatherInputs();
-            assert.equal(res.password, 'Ab1"cd\\');
-            assert.deepEqual(core.setSecret.mock.calls.map((c) => c.arguments), [['Ab1"cd\\'], ['Ab1\\"cd\\\\']]);
+            assert.equal(res.password, 'Ab1 cd\\');
+            assert.deepEqual(core.setSecret.mock.calls.map((c) => c.arguments), [['Ab1 cd\\'], ['Ab1 cd\\\\']]);
+        });
+        it('rejects a password with a double quote, without showing it', () => {
+            setupInputs({ 'sa-password': 'Ab1"cdef' });
+            assert.throws(() => utils.gatherInputs(), (error: Error) => {
+                assert.equal(error.message, 'The sa-password input must not contain a double quote ("), because SQL Server setup can\'t pass it on to the installer that it starts');
+                assert.ok(!error.message.includes('Ab1'));
+                return true;
+            });
+            // the password is masked before the error, so nothing that logs the error can show it
+            assert.deepEqual(core.setSecret.mock.calls[0].arguments, ['Ab1"cdef']);
+        });
+        it('rejects a collation with a double quote', () => {
+            setupInputs({ 'db-collation': 'SQL_Latin1"General' });
+            assert.throws(() => utils.gatherInputs(), { message: 'The db-collation input must not contain a double quote ("), because SQL Server setup can\'t pass it on to the installer that it starts' });
+        });
+        it('accepts a password with spaces, symbols and a trailing backslash', () => {
+            setupInputs({ 'sa-password': 'Str0ng Pa ss%^!\\' });
+            assert.equal(utils.gatherInputs().password, 'Str0ng Pa ss%^!\\');
         });
         it('does not mask an empty password', () => {
             setupInputs({ 'sa-password': '' });

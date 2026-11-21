@@ -26,7 +26,8 @@ See [action.yml](./action.yml):
     # Version of ODBC to install. Supported versions: 17, 18.
     odbc-version: ''
 
-    # The SA user password to use.
+    # The SA user password to use. It must not contain a double quote, which SQL
+    # Server setup cannot pass on.
     # Default: yourStrong(!)Password
     sa-password: 'yourStrong(!)Password'
 
