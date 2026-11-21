@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # the release tools follow the latest Node.js LTS, which can be newer than the node24 that the action runs on
+  # (.nvmrc); the releasetools job checks them on the same version, and the release job waits for it
+  RELEASE_NODE_VERSION: 'lts/*'
+
 jobs:
   commitlint:
     name: Lint commits
@@ -78,6 +83,41 @@ jobs:
           git add --intent-to-add --all
           if ! git diff --exit-code --stat; then
             echo "::error::The built files are out of date. Run npm run build and commit the changes to lib/ and README.md."
+            exit 1
+          fi
+  releasetools:
+    # the release job only runs on master, so check on every change that the release tools run on the release
+    # Node version, and that a build there gives the same lib/ that semantic-release will commit
+    name: Check release tools
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            tools/release/package-lock.json
+      - name: Install dependencies
+        run: npm clean-install --ignore-scripts
+      - name: Install the release tools
+        run: npm clean-install --ignore-scripts --prefix tools/release
+      - name: Check that semantic-release runs on this Node version
+        # the semantic-release CLI exits with an error when the Node version doesn't meet its engines
+        run: ./tools/release/node_modules/.bin/semantic-release --version
+      - name: Build files
+        run: npm run build
+      - name: Check built files
+        run: |
+          git add --intent-to-add --all
+          if ! git diff --exit-code --stat; then
+            echo "::error::A build on the release Node version gives different files from the committed ones."
             exit 1
           fi
   test:
@@ -289,6 +329,7 @@ jobs:
       - commitlint
       - codelint
       - buildlint
+      - releasetools
       - test
       - runaction
     permissions:
@@ -303,7 +344,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version-file: '.nvmrc'
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
