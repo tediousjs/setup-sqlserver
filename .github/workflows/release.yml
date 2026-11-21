@@ -216,6 +216,13 @@ jobs:
               /INSTANCEDIR="D:\SQL Server"
               /INSTALLSQLDATADIR="D:\SQL Server"
             data-root: 'D:\SQL Server\'
+          # a password that needs escaping on the setup command line: a space, characters that cmd.exe would treat
+          # specially and a trailing backslash (setup can't pass on a double quote, so the action rejects one); the
+          # check step logs in with it
+          - os: windows-2022
+            sqlserver: sql-2025
+            variant: password
+            sa-password: 'Str0ng Pa ss%^!\'
     name: runaction (${{ matrix.os }}, ${{ matrix.sqlserver }}${{ matrix.variant && format(', {0}', matrix.variant) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -250,6 +257,8 @@ jobs:
         uses: ./
         with:
           sqlserver-version: ${{ matrix.sqlserver }}
+          # the fallback is the action's own default, so the other jobs keep using it
+          sa-password: ${{ matrix.sa-password || 'yourStrong(!)Password' }}
           native-client-version: 11
           odbc-version: ${{ matrix.odbc-version || '17' }}
           install-updates: ${{ matrix.install-updates || 'true' }}

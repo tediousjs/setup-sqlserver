@@ -26,7 +26,8 @@ See [action.yml](./action.yml):
     # Version of ODBC to install. Supported versions: 17, 18.
     odbc-version: ''
 
-    # The SA user password to use.
+    # The SA user password to use. It must not contain a double quote, which SQL
+    # Server setup cannot pass on.
     # Default: yourStrong(!)Password
     sa-password: 'yourStrong(!)Password'
 
@@ -76,6 +77,12 @@ password in a secret and pass it to `sa-password`:
   with:
     sa-password: ${{ secrets.SQL_SA_PASSWORD }}
 ```
+
+The action masks the password in its logs and in the later steps of the job.
+GitHub prints the step inputs before the action starts, so a password that
+doesn't come from a secret still shows in that step header. GitHub also leaves
+out job outputs that contain a masked value, so read the `sa-password` output
+from the step, not from a job output.
 
 ### SQL Server 2025
 

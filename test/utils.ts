@@ -13,6 +13,7 @@ const core = {
     getInput: mock.fn(() => ''),
     getMultilineInput: mock.fn(() => [] as string[]),
     getBooleanInput: mock.fn(() => false),
+    setSecret: mock.fn(),
     info: mock.fn(),
     debug: mock.fn(),
     warning: mock.fn(),
@@ -68,7 +69,7 @@ const utils = await import('../src/utils.ts');
 
 function resetAll() {
     const fns = [
-        core.getInput, core.getMultilineInput, core.getBooleanInput,
+        core.getInput, core.getMultilineInput, core.getBooleanInput, core.setSecret,
         core.info, core.debug, core.warning, core.notice,
         core.startGroup, core.endGroup, core.isDebug, core.platform.getDetails,
         exec.exec, exec.getExecOutput,
@@ -211,6 +212,40 @@ describe('utils', () => {
             setupInputs({ 'sqlserver-version': '' });
             const res = utils.gatherInputs();
             assert.equal(res.version, '2025');
+        });
+        it('masks the SA password', () => {
+            setupInputs();
+            utils.gatherInputs();
+            assert.deepEqual(core.setSecret.mock.calls.map((c) => c.arguments), [['secret password']]);
+        });
+        it('also masks the escaped form that the command lines show', () => {
+            setupInputs({ 'sa-password': 'Ab1 cd\\' });
+            const res = utils.gatherInputs();
+            assert.equal(res.password, 'Ab1 cd\\');
+            assert.deepEqual(core.setSecret.mock.calls.map((c) => c.arguments), [['Ab1 cd\\'], ['Ab1 cd\\\\']]);
+        });
+        it('rejects a password with a double quote, without showing it', () => {
+            setupInputs({ 'sa-password': 'Ab1"cdef' });
+            assert.throws(() => utils.gatherInputs(), (error: Error) => {
+                assert.equal(error.message, 'The sa-password input must not contain a double quote ("), because SQL Server setup can\'t pass it on to the installer that it starts');
+                assert.ok(!error.message.includes('Ab1'));
+                return true;
+            });
+            // the password is masked before the error, so nothing that logs the error can show it
+            assert.deepEqual(core.setSecret.mock.calls[0].arguments, ['Ab1"cdef']);
+        });
+        it('rejects a collation with a double quote', () => {
+            setupInputs({ 'db-collation': 'SQL_Latin1"General' });
+            assert.throws(() => utils.gatherInputs(), { message: 'The db-collation input must not contain a double quote ("), because SQL Server setup can\'t pass it on to the installer that it starts' });
+        });
+        it('accepts a password with spaces, symbols and a trailing backslash', () => {
+            setupInputs({ 'sa-password': 'Str0ng Pa ss%^!\\' });
+            assert.equal(utils.gatherInputs().password, 'Str0ng Pa ss%^!\\');
+        });
+        it('does not mask an empty password', () => {
+            setupInputs({ 'sa-password': '' });
+            utils.gatherInputs();
+            assert.equal(core.setSecret.mock.callCount(), 0);
         });
         describe('with the inputs in action.yml', () => {
             // each input has a different value, so a misspelt or swapped input name changes the result

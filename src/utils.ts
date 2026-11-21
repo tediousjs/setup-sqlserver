@@ -9,6 +9,7 @@ import * as tc from '@actions/tool-cache';
 import { generateFileHash } from './crypto.ts';
 import { cacheToolDir, cacheToolFile } from './tool-cache.ts';
 import type { VersionConfig } from './versions.ts';
+import { quoteWindowsArgument } from './windows-args.ts';
 
 /**
  * Helper function to determine the runner being used. Uses `systeminfo` to gather version.
@@ -51,16 +52,52 @@ export interface Inputs {
 }
 
 /**
+ * Register the SA password as a secret, so that it shows as *** in the logs of this and later steps. The setup and
+ * sqlcmd command lines that the action logs can show the password in its escaped form, so mask that form too.
+ *
+ * @param {string} password
+ */
+function maskPassword(password: string) {
+    if (!password) {
+        return;
+    }
+    core.setSecret(password);
+    const escaped = quoteWindowsArgument(password).slice(1, -1);
+    if (escaped !== password) {
+        core.setSecret(escaped);
+    }
+}
+
+/**
+ * SQL Server setup passes its arguments on to the installer that it starts, and a value with a double quote doesn't
+ * survive that, even when it is escaped. Stop before anything is downloaded, instead of failing later inside setup.
+ * The error names the input, but never the value, which can be a password.
+ *
+ * @param {string} input The input name
+ * @param {string} value
+ */
+function assertNoDoubleQuote(input: string, value: string) {
+    if (value.includes('"')) {
+        throw new Error(`The ${input} input must not contain a double quote ("), because SQL Server setup can't pass it on to the installer that it starts`);
+    }
+}
+
+/**
  * Gather the action's inputs.
  *
  * @returns {Inputs}
  */
 export function gatherInputs(): Inputs {
     const version = core.getInput('sqlserver-version').replace(/sql-/i, '') || 'latest';
+    const password = core.getInput('sa-password');
+    maskPassword(password);
+    const collation = core.getInput('db-collation');
+    assertNoDoubleQuote('sa-password', password);
+    assertNoDoubleQuote('db-collation', collation);
     return {
         version: version.toLowerCase() === 'latest' ? '2025' : version,
-        password: core.getInput('sa-password'),
-        collation: core.getInput('db-collation'),
+        password,
+        collation,
         installArgs: core.getMultilineInput('install-arguments'),
         wait: core.getBooleanInput('wait-for-ready'),
         skipOsCheck: core.getBooleanInput('skip-os-check'),
