@@ -41,7 +41,10 @@ See [action.yml](./action.yml):
 
     # Wait for the database to respond successfully to queries before completing the
     # action. The action tries to log in up to 6 times, with waits of 1, 2, 4, 8 and
-    # 16 seconds between the attempts.
+    # 16 seconds between the attempts. The check uses sqlcmd. If the database is not
+    # ready, or sqlcmd cannot run, for example because it is not on the PATH, the
+    # action warns and continues. If setup asked for a reboot (exit code 3010), the
+    # action fails instead.
     # Default: true
     wait-for-ready: true
 
@@ -124,8 +127,9 @@ newer update.
 
 If SQL Server setup succeeds but asks for a reboot (exit code 3010), the action
 logs a warning and carries on without rebooting. With `wait-for-ready` enabled,
-the action then fails if the instance doesn't respond to queries, rather than
-only warning as it does after a normal install.
+the action then fails if the instance doesn't respond to queries, or if
+`sqlcmd` can't run to check it. After a normal install, the action only warns
+in both cases.
 
 ### Disks with large sectors
 

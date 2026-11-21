@@ -188,16 +188,18 @@ export default async function install() {
         core.setOutput('sa-password', password);
         core.setOutput('instance-name', instanceName);
         if (wait) {
-            core.startGroup('Waiting for database');
-            const { ready, attempts } = await waitForDatabase(password);
-            if (!ready) {
+            const readiness = await core.group('Waiting for database', () => waitForDatabase(password));
+            if (readiness.status === 'unavailable') {
                 if (rebootRequired) {
-                    core.endGroup();
-                    throw new Error(`Database not ready after ${attempts} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
+                    throw new Error(`Unable to check that the database is ready after setup requested a reboot (exit code 3010) that could not be performed, because sqlcmd could not run: ${readiness.reason}`);
                 }
-                core.warning(`Database not ready after ${attempts} attempts, moving on`);
+                core.warning(`Skipping the readiness check because sqlcmd could not run: ${readiness.reason}`);
+            } else if (readiness.status === 'not-ready') {
+                if (rebootRequired) {
+                    throw new Error(`Database not ready after ${readiness.attempts} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
+                }
+                core.warning(`Database not ready after ${readiness.attempts} attempts, moving on`);
             }
-            core.endGroup();
         }
         core.info(`SQL Server ${version} installed`);
     } catch (e) {

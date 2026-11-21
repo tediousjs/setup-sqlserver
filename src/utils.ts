@@ -128,12 +128,12 @@ export function downloadTool(url: string, extName?: string) {
 }
 
 /**
- * The outcome of the readiness check.
+ * The outcome of the readiness check. It is `unavailable` when sqlcmd can't run, for example because it isn't on
+ * the PATH.
  */
-export interface DatabaseReadiness {
-    ready: boolean;
-    attempts: number;
-}
+export type DatabaseReadiness =
+    | { status: 'ready' | 'not-ready', attempts: number }
+    | { status: 'unavailable', reason: string };
 
 /**
  * The number of times that the readiness check tries to log in. If you change it, also change the
@@ -143,26 +143,34 @@ const READINESS_ATTEMPTS = 6;
 
 /**
  * Try up to READINESS_ATTEMPTS times to log in to the SQL Server instance. Before each new attempt, wait twice
- * as long as before, starting at 1 second.
+ * as long as before, starting at 1 second. If sqlcmd can't run, stop and return `unavailable` instead of
+ * rejecting.
  *
  * @param {string} password
  * @returns {Promise<DatabaseReadiness>}
  */
 export async function waitForDatabase(password: string): Promise<DatabaseReadiness> {
-    let attempts = 1;
-    let res = await queryDatabase(password);
-    while (res !== 0 && attempts < READINESS_ATTEMPTS) {
-        const waitTime = 2 ** (attempts - 1);
-        core.debug(`Database not ready, waiting ${waitTime} second${waitTime === 1 ? '' : 's'}`);
-        await delay(waitTime * 1000);
-        attempts++;
-        core.debug(`Checking database, attempt ${attempts} of ${READINESS_ATTEMPTS}`);
-        res = await queryDatabase(password);
-    }
-    if (res === 0) {
+    try {
+        let attempts = 1;
+        let res = await queryDatabase(password);
+        while (res !== 0 && attempts < READINESS_ATTEMPTS) {
+            const waitTime = 2 ** (attempts - 1);
+            core.debug(`Database not ready, waiting ${waitTime} second${waitTime === 1 ? '' : 's'}`);
+            await delay(waitTime * 1000);
+            attempts++;
+            core.debug(`Checking database, attempt ${attempts} of ${READINESS_ATTEMPTS}`);
+            res = await queryDatabase(password);
+        }
+        if (res !== 0) {
+            return { status: 'not-ready', attempts };
+        }
         core.info(attempts === 1 ? 'Database ready' : `Database ready after ${attempts} attempts`);
+        return { status: 'ready', attempts };
+    } catch (error) {
+        // exec rejects when it can't find sqlcmd on the PATH, or when Node reports a spawn error event, for
+        // example EACCES
+        return { status: 'unavailable', reason: error instanceof Error ? error.message : String(error) };
     }
-    return { ready: res === 0, attempts };
 }
 
 /**

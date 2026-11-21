@@ -34,7 +34,7 @@ const utils = {
     downloadSseiInstaller: mock.fn(async () => 'C:\\tmp\\ssei\\setup.exe'),
     downloadUpdateInstaller: mock.fn(async () => 'C:\\tmp\\exe\\sqlupdate.exe'),
     findInstanceDirArgs: mock.fn(async () => [] as string[]),
-    waitForDatabase: mock.fn(async () => ({ ready: true, attempts: 1 })),
+    waitForDatabase: mock.fn(async () => ({ status: 'ready', attempts: 1 })),
     downloadTool: mock.fn(async () => ''),
 };
 
@@ -99,7 +99,7 @@ describe('install', () => {
         utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:\\tmp\\ssei\\setup.exe');
         utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:\\tmp\\exe\\sqlupdate.exe');
         utils.findInstanceDirArgs.mock.mockImplementation(async () => []);
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: true, attempts: 1 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ status: 'ready', attempts: 1 }));
 
         VERSIONS.clear();
         VERSIONS.set('box', {
@@ -239,12 +239,19 @@ describe('install', () => {
     });
     it('fails if the database is not ready after setup requests a reboot', async () => {
         exec.exec.mock.mockImplementation(async () => 3010);
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, attempts: 6 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ status: 'not-ready', attempts: 6 }));
         await assert.rejects(() => install(), {
             message: 'Database not ready after 6 attempts; setup requested a reboot (exit code 3010) that could not be performed',
         });
         assert.equal(utils.waitForDatabase.mock.callCount(), 1);
-        assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
+    });
+    it('fails if sqlcmd cannot run after setup requests a reboot', async () => {
+        exec.exec.mock.mockImplementation(async () => 3010);
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ status: 'unavailable', reason: 'Unable to locate executable file: sqlcmd.' }));
+        await assert.rejects(() => install(), {
+            message: 'Unable to check that the database is ready after setup requested a reboot (exit code 3010) that could not be performed, because sqlcmd could not run: Unable to locate executable file: sqlcmd.',
+        });
         assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], true);
     });
     it('fails if setup exits with any other non-zero code', async () => {
@@ -370,12 +377,45 @@ describe('install', () => {
         assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:\\tmp\\exe\\setup.exe"');
     });
     it('warns and carries on if the database is not ready', async () => {
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, attempts: 6 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ status: 'not-ready', attempts: 6 }));
         await install();
         assert.equal(utils.waitForDatabase.mock.callCount(), 1);
         assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Database not ready after 6 attempts, moving on']);
-        assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
         assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], false);
+    });
+    it('warns and skips the readiness check if sqlcmd cannot run', async () => {
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ status: 'unavailable', reason: 'Unable to locate executable file: sqlcmd.' }));
+        await install();
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Skipping the readiness check because sqlcmd could not run: Unable to locate executable file: sqlcmd.']);
+        assert.deepEqual(core.setOutput.mock.calls.map((c) => c.arguments), [['sa-password', 'secret password'], ['instance-name', 'MSSQLSERVER']]);
+        assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'SQL Server box installed'));
+        assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], false);
+    });
+    it('checks the database in its own log group', async () => {
+        let group: string | undefined;
+        core.group.mock.mockImplementation(async (name: string, cb: () => unknown) => {
+            group = name;
+            try {
+                return await cb();
+            } finally {
+                group = undefined;
+            }
+        });
+        let checkedIn: string | undefined;
+        utils.waitForDatabase.mock.mockImplementation(async () => {
+            checkedIn = group;
+            return { status: 'ready', attempts: 1 };
+        });
+        await install();
+        assert.equal(checkedIn, 'Waiting for database');
+        assert.deepEqual(utils.waitForDatabase.mock.calls[0].arguments, ['secret password']);
+    });
+    it('does not check the database if wait-for-ready is false', async () => {
+        utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
+        await install();
+        assert.equal(utils.waitForDatabase.mock.callCount(), 0);
+        assert.ok(!core.group.mock.calls.some((c) => c.arguments[0] === 'Waiting for database'));
+        assert.equal(core.warning.mock.callCount(), 0);
     });
     it('fetches summary files', async () => {
         utils.gatherInputs.mock.mockImplementation(() => defaultInputs({ wait: false }));
