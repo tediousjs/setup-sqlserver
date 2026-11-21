@@ -496,12 +496,15 @@ export async function gatherSummaryFiles(withDetail: boolean = false): Promise<s
     } else {
         core.notice('No summary files found');
     }
-    // try to find detail file, this is in a directory that contains the installation date_time
-    // sort the files and then pull the last one off (as that is likely to be the most recent
-    // installation attempt)
+    // Setup writes the Detail.txt of each run in a directory named after the start time of the run (YYYYMMDD_HHMMSS).
+    // Each SQL Server version has its own log directory. Sort the files by the start time and use the last file, which
+    // is from the most recent run. Do not sort by the full path: the version directory comes first in the path, so
+    // that sort chooses an older run of a later version. If two runs have the same start time, use the full path.
+    const startTime = (file: string) => win32.basename(win32.dirname(file));
+    const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     const detailFile = withDetail ? await glob.create(win32.join(logDir, '[0-9]*_[0-9]*', 'Detail.txt'))
         .then((globber) => globber.glob())
-        .then((files) => files.sort())
+        .then((files) => files.sort((a, b) => compare(startTime(a), startTime(b)) || compare(a, b)))
         .then((files) => {
             if (files.length) {
                 core.debug(`Found detail files: ${files.join(', ')}`);

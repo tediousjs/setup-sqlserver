@@ -963,6 +963,27 @@ describe('utils', () => {
             assert.deepEqual(res, ['C:/tmp/summary.txt', 'C:/tmp/2022/details.txt']);
             assert.equal(globCreate.mock.callCount(), 2);
         });
+        const detail = (version: string, run: string) => `C:\\Program Files\\Microsoft SQL Server\\${version}\\Setup Bootstrap\\Log\\${run}\\Detail.txt`;
+        it('finds the detail file of the most recent setup run of any version', async () => {
+            globFn.mock.mockImplementationOnce(async () => [], 0);
+            globFn.mock.mockImplementationOnce(async () => [
+                detail('150', '20250102_090000'),
+                detail('160', '20250101_120000'),
+                detail('160', '20250301_080000'),
+                detail('170', '20240615_100000'),
+            ], 1);
+            const res = await utils.gatherSummaryFiles(true);
+            assert.deepEqual(res, [detail('160', '20250301_080000')]);
+        });
+        for (const order of ['in order', 'in reverse order']) {
+            it(`chooses by the full path if two runs have the same start time, ${order}`, async () => {
+                const files = [detail('150', '20250301_080000'), detail('160', '20250301_080000')];
+                globFn.mock.mockImplementationOnce(async () => [], 0);
+                globFn.mock.mockImplementationOnce(async () => (order === 'in order' ? files : files.toReversed()), 1);
+                const res = await utils.gatherSummaryFiles(true);
+                assert.deepEqual(res, [detail('160', '20250301_080000')]);
+            });
+        }
     });
     describe('.gatherErrorLogs()', () => {
         let globFn: ReturnType<typeof mock.fn>;
