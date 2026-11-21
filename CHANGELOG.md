@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.4](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.3...v4.1.4) (2026-11-21)
+
+### Bug Fixes
+
+* count the readiness check attempts correctly ([27229ec](https://github.com/tediousjs/setup-sqlserver/commit/27229ec9a5a4f274a33be738e2ba6f8773ec72b8))
+* skip the readiness check when sqlcmd can't run ([5ebca34](https://github.com/tediousjs/setup-sqlserver/commit/5ebca344602f6f7886c7f45664917f2beae53d91))
+
 ## [4.1.3](https://github.com/tediousjs/setup-sqlserver/compare/v4.1.2...v4.1.3) (2026-11-21)
 
 ### Bug Fixes
