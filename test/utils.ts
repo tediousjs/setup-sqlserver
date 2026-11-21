@@ -325,7 +325,7 @@ describe('utils', () => {
     describe('.waitForDatabase()', () => {
         it('is ready when the first login succeeds', async () => {
             const res = await utils.waitForDatabase('password');
-            assert.deepEqual(res, { ready: true, retries: 0 });
+            assert.deepEqual(res, { ready: true, attempts: 1 });
             assert.equal(exec.exec.mock.callCount(), 1);
             assert.equal(delay.mock.callCount(), 0);
             assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready']);
@@ -342,18 +342,46 @@ describe('utils', () => {
             let call = 0;
             exec.exec.mock.mockImplementation(async () => (++call >= 3 ? 0 : 1));
             const res = await utils.waitForDatabase('password');
-            assert.deepEqual(res, { ready: true, retries: 2 });
+            assert.deepEqual(res, { ready: true, attempts: 3 });
             assert.equal(exec.exec.mock.callCount(), 3);
             assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000]);
-            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 2 attempts']);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 3 attempts']);
         });
-        it('gives up after 5 retries', async () => {
+        it('is ready when the last attempt succeeds', async () => {
+            let call = 0;
+            exec.exec.mock.mockImplementation(async () => (++call >= 6 ? 0 : 1));
+            const res = await utils.waitForDatabase('password');
+            assert.deepEqual(res, { ready: true, attempts: 6 });
+            assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000, 4000, 8000, 16000]);
+            assert.deepEqual(core.info.mock.calls.map((c) => c.arguments[0]), ['Database ready after 6 attempts']);
+        });
+        it('gives up after 6 attempts', async () => {
             exec.exec.mock.mockImplementation(async () => 1);
             const res = await utils.waitForDatabase('password');
-            assert.deepEqual(res, { ready: false, retries: 5 });
+            assert.deepEqual(res, { ready: false, attempts: 6 });
             assert.equal(exec.exec.mock.callCount(), 6);
             assert.deepEqual(delay.mock.calls.map((c) => c.arguments[0]), [1000, 2000, 4000, 8000, 16000]);
             assert.equal(core.info.mock.callCount(), 0);
+            assert.deepEqual(core.debug.mock.calls.map((c) => c.arguments[0]), [
+                'Database not ready, waiting 1 second',
+                'Checking database, attempt 2 of 6',
+                'Database not ready, waiting 2 seconds',
+                'Checking database, attempt 3 of 6',
+                'Database not ready, waiting 4 seconds',
+                'Checking database, attempt 4 of 6',
+                'Database not ready, waiting 8 seconds',
+                'Checking database, attempt 5 of 6',
+                'Database not ready, waiting 16 seconds',
+                'Checking database, attempt 6 of 6',
+            ]);
+        });
+        it('matches the wait-for-ready description', async () => {
+            exec.exec.mock.mockImplementation(async () => 1);
+            const { attempts } = await utils.waitForDatabase('password');
+            const waits = delay.mock.calls.map((c) => c.arguments[0] / 1000);
+            const description = String((action.inputs['wait-for-ready'] as { description: string }).description);
+            assert.ok(description.includes(`up to ${attempts} times`), description);
+            assert.ok(description.includes(`${waits.slice(0, -1).join(', ')} and ${waits.at(-1)} seconds`), description);
         });
     });
     describe('.downloadBoxInstaller()', () => {

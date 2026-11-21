@@ -34,7 +34,7 @@ const utils = {
     downloadSseiInstaller: mock.fn(async () => 'C:\\tmp\\ssei\\setup.exe'),
     downloadUpdateInstaller: mock.fn(async () => 'C:\\tmp\\exe\\sqlupdate.exe'),
     findInstanceDirArgs: mock.fn(async () => [] as string[]),
-    waitForDatabase: mock.fn(async () => ({ ready: true, retries: 0 })),
+    waitForDatabase: mock.fn(async () => ({ ready: true, attempts: 1 })),
     downloadTool: mock.fn(async () => ''),
 };
 
@@ -99,7 +99,7 @@ describe('install', () => {
         utils.downloadSseiInstaller.mock.mockImplementation(async () => 'C:\\tmp\\ssei\\setup.exe');
         utils.downloadUpdateInstaller.mock.mockImplementation(async () => 'C:\\tmp\\exe\\sqlupdate.exe');
         utils.findInstanceDirArgs.mock.mockImplementation(async () => []);
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: true, retries: 0 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: true, attempts: 1 }));
 
         VERSIONS.clear();
         VERSIONS.set('box', {
@@ -239,9 +239,9 @@ describe('install', () => {
     });
     it('fails if the database is not ready after setup requests a reboot', async () => {
         exec.exec.mock.mockImplementation(async () => 3010);
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, retries: 5 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, attempts: 6 }));
         await assert.rejects(() => install(), {
-            message: 'Database not ready after 5 attempts; setup requested a reboot (exit code 3010) that could not be performed',
+            message: 'Database not ready after 6 attempts; setup requested a reboot (exit code 3010) that could not be performed',
         });
         assert.equal(utils.waitForDatabase.mock.callCount(), 1);
         assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
@@ -370,10 +370,10 @@ describe('install', () => {
         assert.equal(exec.exec.mock.calls[0].arguments[0], '"C:\\tmp\\exe\\setup.exe"');
     });
     it('warns and carries on if the database is not ready', async () => {
-        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, retries: 5 }));
+        utils.waitForDatabase.mock.mockImplementation(async () => ({ ready: false, attempts: 6 }));
         await install();
         assert.equal(utils.waitForDatabase.mock.callCount(), 1);
-        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Database not ready after 5 attempts, moving on']);
+        assert.deepEqual(core.warning.mock.calls.map((c) => c.arguments[0]), ['Database not ready after 6 attempts, moving on']);
         assert.equal(core.endGroup.mock.callCount(), core.startGroup.mock.callCount());
         assert.equal(utils.gatherSummaryFiles.mock.calls[0].arguments[0], false);
     });

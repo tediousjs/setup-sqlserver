@@ -40,7 +40,8 @@ See [action.yml](./action.yml):
     install-arguments: ''
 
     # Wait for the database to respond successfully to queries before completing the
-    # action. A maximum of 10 attempts is made.
+    # action. The action tries to log in up to 6 times, with waits of 1, 2, 4, 8 and
+    # 16 seconds between the attempts.
     # Default: true
     wait-for-ready: true
 

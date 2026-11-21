@@ -132,34 +132,37 @@ export function downloadTool(url: string, extName?: string) {
  */
 export interface DatabaseReadiness {
     ready: boolean;
-    retries: number;
+    attempts: number;
 }
 
 /**
- * Wait for the SQL Server instance to accept logins, retrying with an exponential backoff.
+ * The number of times that the readiness check tries to log in. If you change it, also change the
+ * `wait-for-ready` description in `action.yml`.
+ */
+const READINESS_ATTEMPTS = 6;
+
+/**
+ * Try up to READINESS_ATTEMPTS times to log in to the SQL Server instance. Before each new attempt, wait twice
+ * as long as before, starting at 1 second.
  *
  * @param {string} password
  * @returns {Promise<DatabaseReadiness>}
  */
 export async function waitForDatabase(password: string): Promise<DatabaseReadiness> {
+    let attempts = 1;
     let res = await queryDatabase(password);
-    let count = 0;
-    while (res !== 0 && count < 5) {
-        const waitTime = Math.pow(2, count);
+    while (res !== 0 && attempts < READINESS_ATTEMPTS) {
+        const waitTime = 2 ** (attempts - 1);
         core.debug(`Database not ready, waiting ${waitTime} second${waitTime === 1 ? '' : 's'}`);
         await delay(waitTime * 1000);
-        count++;
-        core.debug(`Checking database, attempt ${count}`);
+        attempts++;
+        core.debug(`Checking database, attempt ${attempts} of ${READINESS_ATTEMPTS}`);
         res = await queryDatabase(password);
     }
     if (res === 0) {
-        if (count) {
-            core.info(`Database ready after ${count} attempts`);
-        } else {
-            core.info(`Database ready`);
-        }
+        core.info(attempts === 1 ? 'Database ready' : `Database ready after ${attempts} attempts`);
     }
-    return { ready: res === 0, retries: count };
+    return { ready: res === 0, attempts };
 }
 
 /**

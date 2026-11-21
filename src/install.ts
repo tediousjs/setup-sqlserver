@@ -189,13 +189,13 @@ export default async function install() {
         core.setOutput('instance-name', instanceName);
         if (wait) {
             core.startGroup('Waiting for database');
-            const { ready, retries } = await waitForDatabase(password);
+            const { ready, attempts } = await waitForDatabase(password);
             if (!ready) {
                 if (rebootRequired) {
                     core.endGroup();
-                    throw new Error(`Database not ready after ${retries} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
+                    throw new Error(`Database not ready after ${attempts} attempts; setup requested a reboot (exit code 3010) that could not be performed`);
                 }
-                core.warning(`Database not ready after ${retries} attempts, moving on`);
+                core.warning(`Database not ready after ${attempts} attempts, moving on`);
             }
             core.endGroup();
         }
