@@ -39,7 +39,7 @@ const io = { mv: mock.fn(async () => {}) };
 const globCreate = mock.fn(async () => ({ glob: async () => [] as string[] }));
 const glob = { create: globCreate };
 
-// the action must not use Node's fetch for anything that these tests don't expect
+// Node's fetch gets the cumulative update page when no proxy applies
 const fetchResponse = {
     ok: true,
     status: 200,
@@ -47,15 +47,16 @@ const fetchResponse = {
 };
 const fetchMock = mock.fn(async () => fetchResponse);
 globalThis.fetch = fetchMock as unknown as typeof fetch;
-// the cumulative update page is fetched with @actions/http-client, and the action reads the response as a stream
+// through a proxy, the cumulative update page is fetched with @actions/http-client, and the action reads the
+// response as a stream
 const pageResponse = {
     statusCode: 200,
     body: mock.fn(async (): Promise<string> => ''),
 };
-function pageMessage(statusCode: number, body: () => Promise<string>) {
+function pageMessage(statusCode: number, body: () => Promise<string>, headers: Record<string, string> = {}) {
     return Object.assign(Readable.from((async function* () {
         yield await body();
-    })()), { statusCode });
+    })()), { statusCode, headers });
 }
 const httpGet = mock.fn(async () => ({ message: pageMessage(pageResponse.statusCode, pageResponse.body) }));
 const httpDispose = mock.fn();
@@ -719,102 +720,96 @@ describe('utils', () => {
             no_proxy: undefined, NO_PROXY: undefined,
         }));
         beforeEach(() => {
-            pageResponse.body.mock.mockImplementation(async () => '<a href="https://download.microsoft.com/update.exe">');
+            fetchResponse.ok = true;
+            fetchResponse.status = 200;
+            fetchResponse.text.mock.mockImplementation(async () => '<a href="https://download.microsoft.com/update.exe">');
+            pageResponse.body.mock.mockImplementation(async () => `<a href="${updateUrl}">download</a>`);
         });
-        it('fetches the page with @actions/http-client', async () => {
-            await utils.downloadUpdateInstaller(config);
-            assert.deepEqual(httpClients, [['setup-sqlserver', [], { socketTimeout: 30000 }]]);
-            assert.deepEqual(httpGet.mock.calls.map((c) => c.arguments), [[config.updateUrl]]);
-            assert.equal(httpDispose.mock.callCount(), 1);
-            assert.equal(fetchMock.mock.callCount(), 0);
-            assert.equal(core.info.mock.calls.some((c) => String(c.arguments[0]).includes('proxy')), false);
-        });
-        describe('when Microsoft refuses the request', () => {
-            beforeEach(() => {
-                pageResponse.statusCode = 403;
-                fetchResponse.text.mock.mockImplementation(async () => `<a href="${updateUrl}">download</a>`);
-            });
-            it('fetches the page with fetch', async () => {
-                const timeout = mock.method(AbortSignal, 'timeout');
-                try {
-                    await utils.downloadUpdateInstaller(config);
-                } finally {
-                    timeout.mock.restore();
-                }
-                assert.deepEqual(timeout.mock.calls.map((c) => c.arguments), [[30000]]);
-                assert.equal(httpGet.mock.callCount(), 1);
-                assert.equal(fetchMock.mock.callCount(), 1);
-                const [url, options] = fetchMock.mock.calls[0].arguments as unknown as [string, RequestInit];
-                assert.equal(url, config.updateUrl);
-                assert.equal(options.signal, timeout.mock.calls[0].result);
-                assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
-                assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'Microsoft refused the cumulative update page request (HTTP 403); trying the page with fetch'));
-                assert.equal(delay.mock.callCount(), 0);
-            });
-            it('retries when fetch fails too', async () => {
-                fetchResponse.ok = false;
-                fetchResponse.status = 403;
-                await assert.rejects(() => utils.downloadUpdateInstaller(config), {
-                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): HTTP 403; with fetch: HTTP 403`,
-                });
-                assert.equal(httpGet.mock.callCount(), 3);
-                assert.equal(fetchMock.mock.callCount(), 3);
-                assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
-            });
-            it('retries when fetch throws', async () => {
-                fetchMock.mock.mockImplementationOnce(async () => { throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }); });
-                await utils.downloadUpdateInstaller(config);
-                assert.equal(fetchMock.mock.callCount(), 2);
-                assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'Cumulative update page fetch failed (HTTP 403; with fetch: fetch failed (ECONNRESET)); retrying (2/3)'));
-            });
-            it('uses the http-client response when the next attempt succeeds', async () => {
-                fetchResponse.ok = false;
-                fetchResponse.status = 403;
-                httpGet.mock.mockImplementationOnce(async () => ({ message: pageMessage(403, pageResponse.body) }), 0);
-                httpGet.mock.mockImplementationOnce(async () => ({ message: pageMessage(200, async () => `<a href="${updateUrl}">download</a>`) }), 1);
-                await utils.downloadUpdateInstaller(config);
-                assert.equal(httpGet.mock.callCount(), 2);
-                assert.equal(fetchMock.mock.callCount(), 1);
-            });
-        });
-        it('fails a page body that stalls, and retries', { timeout: 10_000 }, async () => {
-            mock.timers.enable({ apis: ['setTimeout'] });
+        it('fetches the page with fetch when no proxy applies', async () => {
+            const timeout = mock.method(AbortSignal, 'timeout');
             try {
-                httpGet.mock.mockImplementation(async () => ({ message: Object.assign(new Readable({ read() {} }), { statusCode: 200 }) }));
-                let settled = false;
-                const result = utils.downloadUpdateInstaller(config).finally(() => {
-                    settled = true;
-                });
-                result.catch(() => {});
-                // each attempt waits for its body timer; the delays between attempts are mocked out
-                for (let tick = 0; tick < 20 && !settled; tick++) {
-                    await new Promise((resolve) => setImmediate(resolve));
-                    mock.timers.tick(30_000);
-                }
-                await assert.rejects(result, {
-                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): Request timeout: ${config.updateUrl}`,
-                });
-                assert.equal(httpGet.mock.callCount(), 3);
+                await utils.downloadUpdateInstaller(config);
             } finally {
-                mock.timers.reset();
+                timeout.mock.restore();
             }
-        });
-        it('does not try fetch after other HTTP errors', async () => {
-            pageResponse.statusCode = 404;
-            await assert.rejects(() => utils.downloadUpdateInstaller(config), /HTTP 404$/);
-            assert.equal(fetchMock.mock.callCount(), 0);
-        });
-        it('disposes the client when the page fetch fails', async () => {
-            pageResponse.statusCode = 503;
-            await assert.rejects(() => utils.downloadUpdateInstaller(config), /HTTP 503$/);
-            assert.equal(httpClients.length, 1);
-            assert.equal(httpDispose.mock.callCount(), 1);
+            assert.equal(fetchMock.mock.callCount(), 1);
+            const [url, options] = fetchMock.mock.calls[0].arguments as unknown as [string, RequestInit];
+            assert.equal(url, config.updateUrl);
+            assert.deepEqual(timeout.mock.calls.map((c) => c.arguments), [[30000]]);
+            assert.equal(options.signal, timeout.mock.calls[0].result);
+            assert.equal(httpClients.length, 0);
+            assert.equal(core.info.mock.calls.some((c) => String(c.arguments[0]).includes('proxy')), false);
         });
         describe('with a proxy', () => {
             useEnv(() => ({ HTTPS_PROXY: 'http://proxy.example:8080' }));
-            it('logs the proxy host', async () => {
+            it('fetches the page with @actions/http-client', async () => {
                 await utils.downloadUpdateInstaller(config);
+                assert.deepEqual(httpClients, [['setup-sqlserver', [], { socketTimeout: 30000, allowRedirects: false }]]);
+                assert.deepEqual(httpGet.mock.calls.map((c) => c.arguments), [[config.updateUrl]]);
+                assert.equal(httpDispose.mock.callCount(), 1);
+                assert.equal(fetchMock.mock.callCount(), 0);
+                assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
                 assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === 'Fetching the cumulative update page through the proxy proxy.example:8080'));
+            });
+            it('retries HTTP errors, says how to fetch the page directly, and disposes the client', async () => {
+                pageResponse.statusCode = 403;
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), {
+                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): HTTP 403. The request went through the proxy proxy.example:8080. To fetch the page directly, set NO_PROXY=www.microsoft.com on the setup-sqlserver step`,
+                });
+                assert.equal(httpGet.mock.callCount(), 3);
+                assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
+                assert.equal(httpClients.length, 1);
+                assert.equal(httpDispose.mock.callCount(), 1);
+                // fetch doesn't use the proxy settings by default, so it must not be used
+                assert.equal(fetchMock.mock.callCount(), 0);
+            });
+            for (const error of [Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }), new Error('Request timeout: /en-us/download/details.aspx?id=105013')]) {
+                it(`retries a failed request: ${error.message}`, async () => {
+                    httpGet.mock.mockImplementationOnce(async () => { throw error; });
+                    await utils.downloadUpdateInstaller(config);
+                    assert.equal(httpGet.mock.callCount(), 2);
+                    assert.ok(core.info.mock.calls.some((call) => call.arguments[0] === `Cumulative update page fetch failed (${error.message}); retrying (2/3)`));
+                });
+            }
+            it('retries when the connection closes before the end of the body', async () => {
+                pageResponse.body.mock.mockImplementationOnce(async () => { throw new Error('aborted'); });
+                await utils.downloadUpdateInstaller(config);
+                assert.equal(httpGet.mock.callCount(), 2);
+            });
+            it('fails a page body that stalls, and retries', { timeout: 10_000 }, async () => {
+                mock.timers.enable({ apis: ['setTimeout'] });
+                try {
+                    httpGet.mock.mockImplementation(async () => ({ message: Object.assign(new Readable({ read() {} }), { statusCode: 200, headers: {} }) }));
+                    let settled = false;
+                    const result = utils.downloadUpdateInstaller(config).finally(() => {
+                        settled = true;
+                    });
+                    result.catch(() => {});
+                    const flush = async () => {
+                        for (let i = 0; i < 5; i++) {
+                            await new Promise((resolve) => setImmediate(resolve));
+                        }
+                    };
+                    // the body can take up to 30 seconds
+                    await flush();
+                    mock.timers.tick(29_999);
+                    await flush();
+                    assert.equal(httpGet.mock.callCount(), 1);
+                    mock.timers.tick(1);
+                    await flush();
+                    assert.equal(httpGet.mock.callCount(), 2);
+                    // the other attempts time out in the same way; the delays between attempts are mocked out
+                    for (let tick = 0; tick < 20 && !settled; tick++) {
+                        await new Promise((resolve) => setImmediate(resolve));
+                        mock.timers.tick(30_000);
+                    }
+                    await assert.rejects(result, {
+                        message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): Request timeout: ${config.updateUrl}. The request went through the proxy proxy.example:8080. To fetch the page directly, set NO_PROXY=www.microsoft.com on the setup-sqlserver step`,
+                    });
+                    assert.equal(httpGet.mock.callCount(), 3);
+                } finally {
+                    mock.timers.reset();
+                }
             });
             for (const proxy of ['http://user:secret@proxy.example:8080', 'http://us/er:secret@proxy.example:8080']) {
                 it(`does not name a proxy with credentials: ${proxy}`, async () => {
@@ -826,37 +821,65 @@ describe('utils', () => {
                     assert.equal(logged.some((line) => /secret|\bus\b|user/.test(line)), false);
                 });
             }
-            it('treats a proxy value that http-client does not use as no proxy', async () => {
-                // http-client reads this as a URL with the scheme "proxy.corp:" and no host, and so goes direct
-                process.env.HTTPS_PROXY = 'proxy.corp:8080';
-                pageResponse.statusCode = 403;
-                fetchResponse.text.mock.mockImplementation(async () => `<a href="${updateUrl}">download</a>`);
-                await utils.downloadUpdateInstaller(config);
-                assert.equal(core.info.mock.calls.some((c) => String(c.arguments[0]).includes('through the proxy')), false);
-                assert.equal(fetchMock.mock.callCount(), 1);
-            });
-            it('says how to fetch the page directly when the page fetch fails', async () => {
-                pageResponse.statusCode = 403;
-                await assert.rejects(() => utils.downloadUpdateInstaller(config), {
-                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): HTTP 403. The request went through the proxy proxy.example:8080. To fetch the page directly, set NO_PROXY=www.microsoft.com on the setup-sqlserver step`,
+            for (const status of [199, 304, 404, 429, 500]) {
+                it(`retries HTTP ${status}`, async () => {
+                    httpGet.mock.mockImplementationOnce(async () => ({ message: pageMessage(status, pageResponse.body) }));
+                    await utils.downloadUpdateInstaller(config);
+                    assert.equal(httpGet.mock.callCount(), 2);
+                    assert.ok(core.info.mock.calls.some((call) => call.arguments[0] === `Cumulative update page fetch failed (HTTP ${status}); retrying (2/3)`));
                 });
-                // fetch ignores the proxy, so it must not be tried
-                assert.equal(fetchMock.mock.callCount(), 0);
-            });
-            it('does not use the proxy for a host in NO_PROXY', async () => {
-                process.env.NO_PROXY = 'www.microsoft.com';
-                pageResponse.statusCode = 503;
-                await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): HTTP 503$/);
-                assert.equal(core.info.mock.calls.some((c) => String(c.arguments[0]).includes('through the proxy')), false);
-            });
-            it('tries fetch after a 403 for a host in NO_PROXY', async () => {
-                process.env.NO_PROXY = 'www.microsoft.com';
-                pageResponse.statusCode = 403;
-                fetchResponse.text.mock.mockImplementation(async () => `<a href="${updateUrl}">download</a>`);
+            }
+            it('follows a relative redirect', async () => {
+                httpGet.mock.mockImplementationOnce(async () => ({ message: pageMessage(302, async () => 'moved', { location: '/en-us/download/details.aspx?id=2' }) }));
                 await utils.downloadUpdateInstaller(config);
-                assert.equal(fetchMock.mock.callCount(), 1);
+                assert.deepEqual(httpGet.mock.calls.map((c) => c.arguments), [
+                    [config.updateUrl],
+                    ['https://www.microsoft.com/en-us/download/details.aspx?id=2'],
+                ]);
                 assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
             });
+            it('does not follow a redirect from https to http', async () => {
+                httpGet.mock.mockImplementation(async () => ({ message: pageMessage(301, async () => '', { location: 'http://www.microsoft.com/page' }) }));
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): Redirect from HTTPS to http: isn't allowed\./);
+                assert.equal(httpGet.mock.callCount(), 3);
+            });
+            it('stops after 20 redirects', async () => {
+                httpGet.mock.mockImplementation(async () => ({ message: pageMessage(302, async () => '', { location: config.updateUrl }) }));
+                await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): More than 20 redirects\./);
+                assert.equal(httpGet.mock.callCount(), 3 * 21);
+            });
+            for (const [value, host] of [['10.0.0.1:3128', '10.0.0.1:3128'], ['proxy.corp', 'proxy.corp']]) {
+                it(`uses a proxy value without a scheme that http-client uses: ${value}`, async () => {
+                    // http-client can't read these as URLs, so it adds http:// to them
+                    process.env.HTTPS_PROXY = value;
+                    await utils.downloadUpdateInstaller(config);
+                    assert.equal(fetchMock.mock.callCount(), 0);
+                    assert.equal(httpClients.length, 1);
+                    assert.ok(core.info.mock.calls.some((c) => c.arguments[0] === `Fetching the cumulative update page through the proxy ${host}`));
+                });
+            }
+            it('uses fetch for a proxy value that http-client does not use', async () => {
+                // http-client reads this as a URL with the scheme "proxy.corp:" and no host, and so goes direct
+                process.env.HTTPS_PROXY = 'proxy.corp:8080';
+                await utils.downloadUpdateInstaller(config);
+                assert.equal(fetchMock.mock.callCount(), 1);
+                assert.equal(httpClients.length, 0);
+                assert.equal(core.info.mock.calls.some((c) => String(c.arguments[0]).includes('through the proxy')), false);
+            });
+            // the README says which NO_PROXY values bypass the proxy for the page
+            for (const [noProxy, bypass] of [
+                ['www.microsoft.com', true],
+                ['.microsoft.com', true],
+                ['microsoft.com', true],
+                ['*.microsoft.com', false],
+            ] as const) {
+                it(`${bypass ? 'uses fetch' : 'still uses the proxy'} with NO_PROXY=${noProxy}`, async () => {
+                    process.env.NO_PROXY = noProxy;
+                    await utils.downloadUpdateInstaller(config);
+                    assert.equal(fetchMock.mock.callCount(), bypass ? 1 : 0);
+                    assert.equal(httpClients.length, bypass ? 0 : 1);
+                });
+            }
         });
         it('returns a path to an exe', async () => {
             const res = await utils.downloadUpdateInstaller({
@@ -894,7 +917,7 @@ describe('utils', () => {
                 updateUrl: directUrl,
             });
             assert.match(res, /^C:\\tools\\[a-f0-9-]*\\sqlupdate\.exe$/);
-            assert.equal(httpGet.mock.callCount(), 0);
+            assert.equal(fetchMock.mock.callCount(), 0);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], directUrl);
         });
         it('resolves current Microsoft download metadata without executing JavaScript', async () => {
@@ -902,13 +925,13 @@ describe('utils', () => {
                 name: 'SQLServer2022-KB5104824-x64.exe', url: updateUrl, version: '16.0.4295.3',
             }]) + '<script>throw new Error("must not execute");</script>';
             assert.equal(/\s+href\s*=\s*["'](https:\/\/download\.microsoft\.com\/.*\.exe)['"]/.test(body), false);
-            pageResponse.body.mock.mockImplementation(async () => body);
+            fetchResponse.text.mock.mockImplementation(async () => body);
             const res = await utils.downloadUpdateInstaller(config);
             assert.match(res, /\\sqlupdate\.exe$/);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
         it('supports Microsoft pages containing both metadata and a legacy link', async () => {
-            pageResponse.body.mock.mockImplementation(async () => metadata([{
+            fetchResponse.text.mock.mockImplementation(async () => metadata([{
                 name: 'SQLServer2022-KB5104824-x64.exe', url: updateUrl, version: '16.0.4295.3',
             }]) + `<a href="${updateUrl}">download</a>`);
             await utils.downloadUpdateInstaller(config);
@@ -916,7 +939,7 @@ describe('utils', () => {
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
         it('supports escaped JSON URLs and ignores unrelated files and links', async () => {
-            pageResponse.body.mock.mockImplementation(async () => metadata([
+            fetchResponse.text.mock.mockImplementation(async () => metadata([
                 null, {}, { url: 42 }, { url: 'https://download.microsoft.com/readme.txt' },
                 { url: updateUrl }, { url: updateUrl },
             ]).replaceAll('https://', 'https:\\/\\/') + '<a href="https://download.microsoft.com/unrelated.exe">link</a>');
@@ -924,7 +947,7 @@ describe('utils', () => {
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
         it('supports legacy anchors without capturing adjacent attributes or links', async () => {
-            pageResponse.body.mock.mockImplementation(async () =>
+            fetchResponse.text.mock.mockImplementation(async () =>
                 `<A class="download" HREF = '${updateUrl}' data-file="another.exe">download</A> <a href="https://example.com/other.exe">other</a>`);
             await utils.downloadUpdateInstaller(config);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
@@ -939,9 +962,9 @@ describe('utils', () => {
             metadata([{ url: 'https://example.com/update.exe' }]),
         ]) {
             it(`rejects missing or invalid installer URLs: ${body}`, async () => {
-                pageResponse.body.mock.mockImplementation(async () => body);
+                fetchResponse.text.mock.mockImplementation(async () => body);
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found/);
-                assert.equal(httpGet.mock.callCount(), 1);
+                assert.equal(fetchMock.mock.callCount(), 1);
                 assert.equal(tc.downloadTool.mock.callCount(), 0);
                 assert.equal(tc.cacheFile.mock.callCount(), 0);
                 assert.equal(core.warning.mock.callCount(), 0);
@@ -959,22 +982,22 @@ describe('utils', () => {
             metadata({ url: updateUrl }),
         ]) {
             it(`falls back to legacy links when metadata is malformed: ${body}`, async () => {
-                pageResponse.body.mock.mockImplementation(async () => body + `<a href="${updateUrl}">download</a>`);
+                fetchResponse.text.mock.mockImplementation(async () => body + `<a href="${updateUrl}">download</a>`);
                 await utils.downloadUpdateInstaller(config);
                 assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
                 assert.ok(core.debug.mock.calls.some((call) => String(call.arguments[0]).startsWith('Unable to use cumulative update metadata: ')));
                 assert.equal(core.warning.mock.callCount(), 0);
             });
             it(`includes metadata problems when no legacy link exists: ${body}`, async () => {
-                pageResponse.body.mock.mockImplementation(async () => body);
+                fetchResponse.text.mock.mockImplementation(async () => body);
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found.* Metadata problems: .+/);
-                assert.equal(httpGet.mock.callCount(), 1);
+                assert.equal(fetchMock.mock.callCount(), 1);
                 assert.equal(tc.downloadTool.mock.callCount(), 0);
                 assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
             });
         }
         it('falls back to legacy links when metadata contains no usable installer', async () => {
-            pageResponse.body.mock.mockImplementation(async () => metadata([{ url: 'https://example.com/untrusted.exe' }]) + `<a href="${updateUrl}">download</a>`);
+            fetchResponse.text.mock.mockImplementation(async () => metadata([{ url: 'https://example.com/untrusted.exe' }]) + `<a href="${updateUrl}">download</a>`);
             await utils.downloadUpdateInstaller(config);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
@@ -983,7 +1006,7 @@ describe('utils', () => {
             [[], 'File list has no HTTPS download.microsoft.com .exe installer'],
         ] as const) {
             it(`names metadata without a usable installer when no legacy link exists: ${problem}`, async () => {
-                pageResponse.body.mock.mockImplementation(async () => metadata(files));
+                fetchResponse.text.mock.mockImplementation(async () => metadata(files));
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), {
                     message: `No HTTPS download.microsoft.com .exe cumulative update installer found in Microsoft download page. Metadata problems: ${problem}`,
                 });
@@ -991,19 +1014,19 @@ describe('utils', () => {
             });
         }
         it('uses valid metadata after an unusable metadata script', async () => {
-            pageResponse.body.mock.mockImplementation(async () => '<script>window.__DLCDetails__={invalid};</script>' + metadata([{ url: updateUrl }]));
+            fetchResponse.text.mock.mockImplementation(async () => '<script>window.__DLCDetails__={invalid};</script>' + metadata([{ url: updateUrl }]));
             await utils.downloadUpdateInstaller(config);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
         });
         it('includes the Microsoft metadata error when no installer is found', async () => {
             const body = metadata([], 'Download temporarily unavailable');
-            pageResponse.body.mock.mockImplementation(async () => body);
+            fetchResponse.text.mock.mockImplementation(async () => body);
             await assert.rejects(() => utils.downloadUpdateInstaller(config), /No HTTPS .* installer found.* Microsoft download page error: Download temporarily unavailable/);
             assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === 'Microsoft download page error: Download temporarily unavailable'));
             assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
         });
         it('can use a legacy link despite a Microsoft metadata error', async () => {
-            pageResponse.body.mock.mockImplementation(async () => metadata([], 'Metadata unavailable') + `<a href="${updateUrl}">download</a>`);
+            fetchResponse.text.mock.mockImplementation(async () => metadata([], 'Metadata unavailable') + `<a href="${updateUrl}">download</a>`);
             await utils.downloadUpdateInstaller(config);
             assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
             assert.equal(core.warning.mock.callCount(), 0);
@@ -1013,59 +1036,66 @@ describe('utils', () => {
             `<a href="${updateUrl}">one</a><a href="https://download.microsoft.com/another.exe">two</a>`,
         ]) {
             it(`rejects ambiguous installer files: ${body}`, async () => {
-                pageResponse.body.mock.mockImplementation(async () => body);
+                fetchResponse.text.mock.mockImplementation(async () => body);
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), /Multiple cumulative update installers/);
                 assert.equal(tc.downloadTool.mock.callCount(), 0);
                 assert.ok(core.debug.mock.calls.some((call) => call.arguments[0] === body));
             });
         }
-        for (const status of [404]) {
+        for (const status of [403, 404]) {
             it(`fails explicitly after retrying HTTP ${status}`, async () => {
-                pageResponse.statusCode = status;
+                fetchResponse.ok = false;
+                fetchResponse.status = status;
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), new RegExp(`after 3 attempt\\(s\\): HTTP ${status}`));
-                assert.equal(httpGet.mock.callCount(), 3);
+                assert.equal(fetchMock.mock.callCount(), 3);
                 assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
                 assert.equal(tc.downloadTool.mock.callCount(), 0);
                 assert.equal(core.warning.mock.callCount(), 0);
             });
         }
-        for (const status of [301, 400, 401, 404, 408, 429, 500, 503]) {
+        for (const status of [301, 400, 401, 403, 404, 408, 429, 500, 503]) {
             it(`retries transient HTTP ${status}`, async () => {
-                httpGet.mock.mockImplementationOnce(async () => ({ message: pageMessage(status, pageResponse.body) }));
+                fetchMock.mock.mockImplementationOnce(async () => ({ ...fetchResponse, ok: false, status }));
                 await utils.downloadUpdateInstaller(config);
-                assert.equal(httpGet.mock.callCount(), 2);
+                assert.equal(fetchMock.mock.callCount(), 2);
                 assert.equal(delay.mock.calls[0].arguments[0], 5000);
                 assert.ok(core.info.mock.calls.some((call) => call.arguments[0] === `Cumulative update page fetch failed (HTTP ${status}); retrying (2/3)`));
                 assert.equal(core.warning.mock.callCount(), 0);
             });
         }
-        for (const error of [Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }), new Error('Request timeout: /en-us/download/details.aspx?id=105013')]) {
-            it(`retries a failed request: ${error.message}`, async () => {
-                httpGet.mock.mockImplementationOnce(async () => { throw error; });
+        for (const error of [new TypeError('fetch failed'), new DOMException('timed out', 'TimeoutError')]) {
+            it(`retries transient ${error.name}`, async () => {
+                fetchMock.mock.mockImplementationOnce(async () => { throw error; });
                 await utils.downloadUpdateInstaller(config);
-                assert.equal(httpGet.mock.callCount(), 2);
+                assert.equal(fetchMock.mock.callCount(), 2);
                 assert.ok(core.info.mock.calls.some((call) => String(call.arguments[0]).includes('retrying (2/3)')));
                 assert.equal(core.warning.mock.callCount(), 0);
             });
         }
         it('retries a transient response body failure', async () => {
-            pageResponse.body.mock.mockImplementationOnce(async () => { throw new Error('aborted'); });
+            fetchResponse.text.mock.mockImplementationOnce(async () => { throw new TypeError('terminated'); });
             await utils.downloadUpdateInstaller(config);
-            assert.equal(httpGet.mock.callCount(), 2);
+            assert.equal(fetchMock.mock.callCount(), 2);
+        });
+        it('retries other errors', async () => {
+            fetchMock.mock.mockImplementationOnce(async () => { throw new Error('unexpected error'); });
+            await utils.downloadUpdateInstaller(config);
+            assert.equal(fetchMock.mock.callCount(), 2);
         });
         it('fails after three unsuccessful HTTP attempts', async () => {
-            pageResponse.statusCode = 503;
+            fetchResponse.ok = false;
+            fetchResponse.status = 503;
             await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): HTTP 503/);
-            assert.equal(httpGet.mock.callCount(), 3);
+            assert.equal(fetchMock.mock.callCount(), 3);
             assert.deepEqual(delay.mock.calls.map((call) => call.arguments[0]), [5000, 10000]);
             assert.equal(core.info.mock.callCount(), 2);
             assert.equal(core.warning.mock.callCount(), 0);
             assert.equal(tc.downloadTool.mock.callCount(), 0);
         });
         it('fails after three unsuccessful network attempts', async () => {
-            httpGet.mock.mockImplementation(async () => { throw new Error('getaddrinfo ENOTFOUND www.microsoft.com'); });
-            await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): getaddrinfo ENOTFOUND www\.microsoft\.com$/);
-            assert.equal(httpGet.mock.callCount(), 3);
+            fetchMock.mock.mockImplementation(async () => { throw new TypeError('fetch failed'); });
+            await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): fetch failed/);
+            assert.equal(fetchMock.mock.callCount(), 3);
             assert.equal(tc.cacheFile.mock.callCount(), 0);
         });
         for (const [cause, detail] of [
@@ -1076,14 +1106,14 @@ describe('utils', () => {
             ['ECONNRESET', 'ECONNRESET'],
         ] as const) {
             it(`preserves the network failure cause: ${detail}`, async () => {
-                const error = new Error('request failed', { cause });
-                httpGet.mock.mockImplementation(async () => { throw error; });
+                const error = new TypeError('fetch failed', { cause });
+                fetchMock.mock.mockImplementation(async () => { throw error; });
                 await assert.rejects(() => utils.downloadUpdateInstaller(config), {
-                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): request failed (${detail})`,
+                    message: `Unable to fetch cumulative update page ${config.updateUrl} after 3 attempt(s): fetch failed (${detail})`,
                     cause: error,
                 });
-                assert.equal(httpGet.mock.callCount(), 3);
-                assert.equal(core.info.mock.calls[0].arguments[0], `Cumulative update page fetch failed (request failed (${detail})); retrying (2/3)`);
+                assert.equal(fetchMock.mock.callCount(), 3);
+                assert.equal(core.info.mock.calls[0].arguments[0], `Cumulative update page fetch failed (fetch failed (${detail})); retrying (2/3)`);
                 assert.equal(core.warning.mock.callCount(), 0);
             });
         }

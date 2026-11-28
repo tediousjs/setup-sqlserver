@@ -40,7 +40,19 @@ describe('cumulative update page through a proxy', () => {
     // the page is on a host that doesn't exist, so the request can only reach it through the proxy
     const config = { version: '2022', updateUrl: 'http://cu-page.test/en-us/download/details.aspx?id=1' };
     let cut = false;
+    let redirect: 'none' | 'relative' | 'cut' = 'none';
     const page = createServer((req, res) => {
+        if (redirect !== 'none' && !req.url?.startsWith('/moved')) {
+            if (redirect === 'cut') {
+                // send part of the redirect body, then close the connection
+                res.writeHead(302, { location: '/moved', 'content-length': '1000' });
+                res.write('moved', () => req.socket.destroy());
+                return;
+            }
+            res.writeHead(302, { location: '/moved/page' });
+            res.end('moved');
+            return;
+        }
         if (cut) {
             // send part of the body, then close the connection
             res.writeHead(200, { 'content-type': 'text/html', 'content-length': '1000' });
@@ -92,6 +104,7 @@ describe('cumulative update page through a proxy', () => {
         tunnels.length = 0;
         refuse = false;
         cut = false;
+        redirect = 'none';
         for (const fn of [core.info, core.debug, core.warning, core.notice, tc.downloadTool, tc.cacheFile, io.mv]) {
             fn.mock.resetCalls();
         }
@@ -133,6 +146,17 @@ describe('cumulative update page through a proxy', () => {
         const httpsConfig = { ...config, updateUrl: 'https://cu-page.test/en-us/download/details.aspx?id=1' };
         await assert.rejects(() => utils.downloadUpdateInstaller(httpsConfig), /statusCode=407.*set NO_PROXY=cu-page\.test on the setup-sqlserver step$/);
         assert.deepEqual(tunnels, ['cu-page.test:443', 'cu-page.test:443', 'cu-page.test:443']);
+    });
+    it('follows a relative redirect through the proxy', { timeout: 10_000 }, async () => {
+        redirect = 'relative';
+        await utils.downloadUpdateInstaller(config);
+        assert.deepEqual(tunnels, ['cu-page.test:80', 'cu-page.test:80']);
+        assert.equal(tc.downloadTool.mock.calls[0].arguments[0], updateUrl);
+    });
+    it('fails and retries when the connection closes before the end of a redirect', { timeout: 10_000 }, async () => {
+        redirect = 'cut';
+        await assert.rejects(() => utils.downloadUpdateInstaller(config), /after 3 attempt\(s\): aborted\./);
+        assert.equal(tunnels.length, 3);
     });
     it('fails and retries when the connection closes before the end of the page', { timeout: 10_000 }, async () => {
         cut = true;

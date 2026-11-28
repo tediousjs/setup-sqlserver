@@ -406,13 +406,19 @@ function describeCause(cause: unknown): string {
 }
 
 /**
- * The time in milliseconds that a cumulative update page request can be idle before it fails, and the time that its
- * body can take. A proxy that never answers the CONNECT request isn't limited, the same as for the downloads.
+ * The time limit in milliseconds for a cumulative update page request. Without a proxy, it limits the whole request.
+ * Through a proxy, it limits the time that the request can be idle, and the time that each body can take. A proxy that
+ * never answers the CONNECT request isn't limited, the same as for the downloads.
  */
 const UPDATE_PAGE_TIMEOUT = 30_000;
 
 /**
- * Describe a failure and its cause, for a log message. Leave out the cause when the message already contains it.
+ * The number of redirects that a cumulative update page request follows through a proxy, the same as Node's fetch.
+ */
+const MAX_PAGE_REDIRECTS = 20;
+
+/**
+ * Describe a failure and its cause, for a log message.
  *
  * @param {unknown} error
  * @returns {string}
@@ -420,7 +426,7 @@ const UPDATE_PAGE_TIMEOUT = 30_000;
 function describeError(error: unknown): string {
     const reason = error instanceof Error ? error.message : String(error);
     const causeDetails = error instanceof Error ? describeCause(error.cause) : '';
-    return causeDetails && !reason.includes(causeDetails) ? `${reason} (${causeDetails})` : reason;
+    return causeDetails ? `${reason} (${causeDetails})` : reason;
 }
 
 /**
@@ -442,7 +448,8 @@ async function readPageBody(message: IncomingMessage, url: string): Promise<stri
 }
 
 /**
- * Fetch a cumulative update page with Node's fetch, which ignores the proxy settings.
+ * Fetch a cumulative update page with Node's fetch. Node's fetch doesn't use the proxy settings unless
+ * NODE_USE_ENV_PROXY or --use-env-proxy is set when Node starts.
  *
  * @param {string} url
  * @returns {Promise<string>}
@@ -456,9 +463,44 @@ async function fetchPageWithFetch(url: string): Promise<string> {
 }
 
 /**
- * Fetch a Microsoft download page, to find its cumulative update. The request uses @actions/http-client, which the
- * downloads also use, so that it follows the same proxy settings (HTTPS_PROXY and NO_PROXY). If Microsoft refuses
- * the request with HTTP 403 and no proxy applies, try the page again with Node's fetch in the same attempt.
+ * Fetch a cumulative update page with @actions/http-client, which follows the proxy settings. The client must not
+ * follow redirects itself: it reads each redirect body with readBody(), which never settles when the connection
+ * closes early, and it can't follow a relative Location.
+ *
+ * @param {HttpClient} client
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+async function fetchPageWithHttpClient(client: HttpClient, url: string): Promise<string> {
+    let current = new URL(url);
+    for (let redirects = 0; ; redirects++) {
+        const res = await client.get(current.href);
+        const body = await readPageBody(res.message, current.href);
+        const status = res.message.statusCode ?? 0;
+        const location = res.message.headers.location;
+        if (status >= 300 && status < 400 && location) {
+            if (redirects === MAX_PAGE_REDIRECTS) {
+                throw new Error(`More than ${MAX_PAGE_REDIRECTS} redirects`);
+            }
+            const next = new URL(location, current);
+            if (current.protocol === 'https:' && next.protocol !== 'https:') {
+                throw new Error(`Redirect from HTTPS to ${next.protocol} isn't allowed`);
+            }
+            current = next;
+            continue;
+        }
+        if (status < 200 || status > 299) {
+            throw new Error(`HTTP ${status}`);
+        }
+        return body;
+    }
+}
+
+/**
+ * Fetch a Microsoft download page, to find its cumulative update. When a proxy applies to the page, use
+ * @actions/http-client, which the downloads also use. The page request then follows the same proxy settings
+ * (HTTPS_PROXY and NO_PROXY). Otherwise use Node's fetch. Microsoft has refused @actions/http-client requests for
+ * these pages from GitHub runners with HTTP 403, and accepted Node's fetch from the same runners.
  *
  * @param {string} url
  * @returns {Promise<string>} The page
@@ -481,28 +523,13 @@ async function fetchUpdatePage(url: string): Promise<string> {
     if (proxy) {
         core.info(`Fetching the cumulative update page through ${proxyName}`);
     }
-    const client = new HttpClient('setup-sqlserver', [], { socketTimeout: UPDATE_PAGE_TIMEOUT });
+    const client = proxy
+        ? new HttpClient('setup-sqlserver', [], { socketTimeout: UPDATE_PAGE_TIMEOUT, allowRedirects: false })
+        : undefined;
     try {
         for (let attempt = 1; ; attempt++) {
             try {
-                const res = await client.get(url);
-                const body = await readPageBody(res.message, url);
-                const status = res.message.statusCode ?? 0;
-                if (status === 403 && !proxy) {
-                    // Microsoft has refused @actions/http-client requests for these pages before, while it accepted
-                    // Node's fetch from the same runners. Node's fetch ignores the proxy settings, so use it only when
-                    // no proxy applies.
-                    core.info('Microsoft refused the cumulative update page request (HTTP 403); trying the page with fetch');
-                    try {
-                        return await fetchPageWithFetch(url);
-                    } catch (error) {
-                        throw new Error(`HTTP 403; with fetch: ${describeError(error)}`, { cause: error });
-                    }
-                }
-                if (status < 200 || status > 299) {
-                    throw new Error(`HTTP ${status}`);
-                }
-                return body;
+                return client ? await fetchPageWithHttpClient(client, url) : await fetchPageWithFetch(url);
             } catch (error) {
                 const reason = describeError(error);
                 if (attempt === attempts) {
@@ -513,7 +540,7 @@ async function fetchUpdatePage(url: string): Promise<string> {
             }
         }
     } finally {
-        client.dispose();
+        client?.dispose();
     }
 }
 
