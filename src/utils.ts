@@ -1,9 +1,13 @@
 import { mkdtemp, readdir } from 'node:fs/promises';
 import { basename, extname, dirname, join as joinPaths, win32 } from 'node:path';
+import type { IncomingMessage } from 'node:http';
+import { text } from 'node:stream/consumers';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as glob from '@actions/glob';
+import { HttpClient } from '@actions/http-client';
+import { getProxyUrl } from '@actions/http-client/lib/proxy';
 import * as io from '@actions/io';
 import * as tc from '@actions/tool-cache';
 import { generateFileHash } from './crypto.ts';
@@ -401,30 +405,142 @@ function describeCause(cause: unknown): string {
     return [message, code].filter(Boolean).join(' / ');
 }
 
+/**
+ * The time limit in milliseconds for a cumulative update page request. Without a proxy, it limits the whole request.
+ * Through a proxy, it limits the time that the request can be idle, and the time that each body can take. A proxy that
+ * never answers the CONNECT request isn't limited, the same as for the downloads.
+ */
+const UPDATE_PAGE_TIMEOUT = 30_000;
+
+/**
+ * The number of redirects that a cumulative update page request follows through a proxy, the same as Node's fetch.
+ */
+const MAX_PAGE_REDIRECTS = 20;
+
+/**
+ * Describe a failure and its cause, for a log message.
+ *
+ * @param {unknown} error
+ * @returns {string}
+ */
+function describeError(error: unknown): string {
+    const reason = error instanceof Error ? error.message : String(error);
+    const causeDetails = error instanceof Error ? describeCause(error.cause) : '';
+    return causeDetails ? `${reason} (${causeDetails})` : reason;
+}
+
+/**
+ * Read the body of a cumulative update page response. HttpClientResponse.readBody() never settles when the
+ * connection closes before the end of the body, so read the stream, which then fails. Also fail when the body takes
+ * longer than UPDATE_PAGE_TIMEOUT.
+ *
+ * @param {IncomingMessage} message
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+async function readPageBody(message: IncomingMessage, url: string): Promise<string> {
+    const timer = setTimeout(() => message.destroy(new Error(`Request timeout: ${url}`)), UPDATE_PAGE_TIMEOUT);
+    try {
+        return await text(message);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/**
+ * Fetch a cumulative update page with Node's fetch. Node's fetch doesn't use the proxy settings unless
+ * NODE_USE_ENV_PROXY or --use-env-proxy is set when Node starts.
+ *
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+async function fetchPageWithFetch(url: string): Promise<string> {
+    const res = await fetch(url, { signal: AbortSignal.timeout(UPDATE_PAGE_TIMEOUT) });
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.text();
+}
+
+/**
+ * Fetch a cumulative update page with @actions/http-client, which follows the proxy settings. The client must not
+ * follow redirects itself: it reads each redirect body with readBody(), which never settles when the connection
+ * closes early, and it can't follow a relative Location.
+ *
+ * @param {HttpClient} client
+ * @param {string} url
+ * @returns {Promise<string>}
+ */
+async function fetchPageWithHttpClient(client: HttpClient, url: string): Promise<string> {
+    let current = new URL(url);
+    for (let redirects = 0; ; redirects++) {
+        const res = await client.get(current.href);
+        const body = await readPageBody(res.message, current.href);
+        const status = res.message.statusCode ?? 0;
+        const location = res.message.headers.location;
+        if (status >= 300 && status < 400 && location) {
+            if (redirects === MAX_PAGE_REDIRECTS) {
+                throw new Error(`More than ${MAX_PAGE_REDIRECTS} redirects`);
+            }
+            const next = new URL(location, current);
+            if (current.protocol === 'https:' && next.protocol !== 'https:') {
+                throw new Error(`Redirect from HTTPS to ${next.protocol} isn't allowed`);
+            }
+            current = next;
+            continue;
+        }
+        if (status < 200 || status > 299) {
+            throw new Error(`HTTP ${status}`);
+        }
+        return body;
+    }
+}
+
+/**
+ * Fetch a Microsoft download page, to find its cumulative update. When a proxy applies to the page, use
+ * @actions/http-client, which the downloads also use. The page request then follows the same proxy settings
+ * (HTTPS_PROXY and NO_PROXY). Otherwise use Node's fetch. Microsoft has refused @actions/http-client requests for
+ * these pages from GitHub runners with HTTP 403, and accepted Node's fetch from the same runners.
+ *
+ * @param {string} url
+ * @returns {Promise<string>} The page
+ */
 async function fetchUpdatePage(url: string): Promise<string> {
     const attempts = 3;
-    for (let attempt = 1; ; attempt++) {
-        let retryable = false;
-        try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-            if (!res.ok) {
-                retryable = true;
-                throw new Error(`HTTP ${res.status}`);
+    const pageUrl = new URL(url);
+    // http-client uses the proxy only when its URL has a host name
+    const found = getProxyUrl(pageUrl);
+    const proxy = found?.hostname ? found : undefined;
+    // name the proxy by its host, but not when the proxy URL has credentials: if they aren't encoded, parts of them can
+    // end up in the host
+    const proxyValue = pageUrl.protocol === 'https:'
+        ? process.env.https_proxy || process.env.HTTPS_PROXY
+        : process.env.http_proxy || process.env.HTTP_PROXY;
+    const proxyName = proxy && !proxyValue?.includes('@') ? `the proxy ${proxy.host}` : 'the proxy';
+    const proxyHint = proxy
+        ? `. The request went through ${proxyName}. To fetch the page directly, set NO_PROXY=${pageUrl.hostname} on the setup-sqlserver step`
+        : '';
+    if (proxy) {
+        core.info(`Fetching the cumulative update page through ${proxyName}`);
+    }
+    const client = proxy
+        ? new HttpClient('setup-sqlserver', [], { socketTimeout: UPDATE_PAGE_TIMEOUT, allowRedirects: false })
+        : undefined;
+    try {
+        for (let attempt = 1; ; attempt++) {
+            try {
+                return client ? await fetchPageWithHttpClient(client, url) : await fetchPageWithFetch(url);
+            } catch (error) {
+                const reason = describeError(error);
+                if (attempt === attempts) {
+                    throw new Error(`Unable to fetch cumulative update page ${url} after ${attempt} attempt(s): ${reason}${proxyHint}`, { cause: error });
+                }
+                core.info(`Cumulative update page fetch failed (${reason}); retrying (${attempt + 1}/${attempts})`);
+                await delay(5000 * attempt);
             }
-            return await res.text();
-        } catch (error) {
-            retryable ||= error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError');
-            let reason = error instanceof Error ? error.message : String(error);
-            const causeDetails = error instanceof Error ? describeCause(error.cause) : '';
-            if (causeDetails) {
-                reason += ` (${causeDetails})`;
-            }
-            if (!retryable || attempt === attempts) {
-                throw new Error(`Unable to fetch cumulative update page ${url} after ${attempt} attempt(s): ${reason}`, { cause: error });
-            }
-            core.info(`Cumulative update page fetch failed (${reason}); retrying (${attempt + 1}/${attempts})`);
-            await delay(5000 * attempt);
         }
+    } finally {
+        client?.dispose();
     }
 }
 

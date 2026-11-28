@@ -113,6 +113,34 @@ reason and installs SQL Server without updates. Update URLs are configured for
 SQL Server 2016 and later, including 2025 (and so the default, `'latest'`);
 older versions skip updates.
 
+#### Proxies
+
+When the runner's proxy settings (`HTTPS_PROXY` and `NO_PROXY`) apply to the
+download page, the action fetches the page through the proxy. It uses the same
+HTTP client as its downloads, and it writes a message about the proxy to the
+log. Otherwise, the action fetches the page directly with Node's built-in
+`fetch`, because Microsoft has refused many more requests from that HTTP client
+than from `fetch`. If the action can't fetch the page through the proxy, set
+`NO_PROXY` on the setup-sqlserver step to fetch the page directly:
+
+```yaml
+- uses: tediousjs/setup-sqlserver@v4
+  with:
+    install-updates: true
+  env:
+    NO_PROXY: www.microsoft.com
+```
+
+Only the download pages are on `www.microsoft.com`, so this doesn't change how
+the action downloads the installers and updates.
+
+The `NO_PROXY` of the step replaces the runner's value for that step only. So
+add any other hosts from the runner's list that the step needs. Set it on the
+step, not on the job, so that the other steps keep the runner's value. Each
+entry also matches its subdomains, so `microsoft.com` or `.microsoft.com` also
+sends the installer and update downloads directly. A `*.` wildcard doesn't
+work.
+
 ### Caching
 
 Downloaded SQL Server installers, cumulative updates, and ODBC and Native
